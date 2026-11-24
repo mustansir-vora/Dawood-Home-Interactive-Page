@@ -1,0 +1,2490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>3D Architectural Interior Walkthrough — Two-Story Residence</title>
+
+  <!-- Tailwind CSS for crisp, responsive architectural HUD styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Three.js r128 (classic non-module script so it runs locally via file:// as well as in preview) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <!-- Inter Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #dbeafe;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+
+    #viewport-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+    }
+
+    #viewport-canvas:active {
+      cursor: grabbing;
+    }
+
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(15, 23, 42, 0.10);
+      box-shadow: 0 10px 30px -8px rgba(15, 23, 42, 0.16);
+    }
+
+    /* Custom sleek range slider for Ceiling Height */
+    input[type="range"].height-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      border-radius: 9999px;
+      background: #e2e8f0;
+      outline: none;
+    }
+
+    input[type="range"].height-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 9999px;
+      background: #0f172a;
+      border: 2px solid #ffffff;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
+      cursor: pointer;
+    }
+
+    input[type="range"].height-slider::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 9999px;
+      background: #0f172a;
+      border: 2px solid #ffffff;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
+      cursor: pointer;
+    }
+
+    /* Subtle crosshair when pointer lock is active */
+    #fps-crosshair {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 10px;
+      height: 10px;
+      margin-left: -5px;
+      margin-top: -5px;
+      border-radius: 9999px;
+      border: 2px solid rgba(15, 23, 42, 0.55);
+      background: rgba(255, 255, 255, 0.7);
+      pointer-events: none;
+      z-index: 25;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <!-- Main 3D WebGL Canvas -->
+  <canvas id="viewport-canvas"></canvas>
+
+  <!-- Subtle FPS Reticle (visible only in Pointer Lock mode) -->
+  <div id="fps-crosshair"></div>
+
+  <!-- Toast Message Box (replaces alert() cleanly) -->
+  <div id="toast-box" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900/90 text-white text-xs font-medium shadow-lg opacity-0 pointer-events-none transition-opacity duration-300">
+    Notification
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- TOP-LEFT HUD: Floor Switcher, Room Jump, Room Status & Fixture Controls -->
+  <!-- ===================================================================== -->
+  <div class="fixed top-3 left-3 z-30 flex flex-col gap-2 max-w-[calc(100vw-24px)] sm:max-w-xl pointer-events-none">
+    <!-- Primary Navigation Bar -->
+    <div class="glass-panel rounded-2xl p-2 flex flex-wrap items-center gap-2 pointer-events-auto">
+      <!-- Floor Switcher -->
+      <div class="inline-flex bg-slate-100/90 p-1 rounded-xl border border-slate-200/80">
+        <button id="btn-floor-gf" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-slate-900 text-white shadow-sm">
+          Ground Floor
+        </button>
+        <button id="btn-floor-ff" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-600 hover:text-slate-900">
+          First Floor
+        </button>
+      </div>
+
+      <!-- Quick Jump to Room -->
+      <select id="room-jump-select" aria-label="Jump to Room" class="bg-white/95 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 cursor-pointer">
+        <option value="" disabled selected>Jump to Room...</option>
+        <optgroup label="Ground Floor">
+          <option value="gf_living">Living Room (19'-3" × 14'-0")</option>
+          <option value="gf_verandah">L-Shaped Verandah</option>
+          <option value="gf_kitchen">Kitchen (12'-5" × 11'-0")</option>
+          <option value="gf_lobby">GF Central Lobby (9'-0" × 4'-9")</option>
+          <option value="gf_bed_nw">GF NW Bedroom (12'-10" × 14'-0")</option>
+          <option value="gf_bed_ne">GF NE Bedroom (12'-10" × 14'-0")</option>
+          <option value="gf_toilet_l">GF Left Toilet (8'-3" × 5'-0")</option>
+          <option value="gf_toilet_r">GF Right Toilet (8'-0" × 5'-0")</option>
+          <option value="gf_toilet_stair">Under-Stair Toilet</option>
+          <option value="gf_stair_bot">Staircase Entry (Bottom)</option>
+        </optgroup>
+        <optgroup label="First Floor">
+          <option value="ff_family">FF Family Seating (12'-5" × 11'-0")</option>
+          <option value="ff_terrace">FF Open Terrace (20'-9" × 14'-6")</option>
+          <option value="ff_lobby">FF Central Lobby (9'-0" × 4'-9")</option>
+          <option value="ff_bed_nw">FF NW Bedroom (12'-10" × 14'-0")</option>
+          <option value="ff_bed_ne">FF NE Bedroom (12'-10" × 14'-0")</option>
+          <option value="ff_toilet_l">FF Left Toilet (8'-3" × 5'-0")</option>
+          <option value="ff_toilet_r">FF Right Toilet (8'-0" × 5'-0")</option>
+          <option value="ff_stair_top">Staircase Landing (Top)</option>
+        </optgroup>
+      </select>
+
+      <!-- Divider -->
+      <div class="hidden sm:block h-5 w-px bg-slate-200"></div>
+
+      <!-- Fixtures & FPS Toggles -->
+      <div class="flex items-center gap-1.5">
+        <button id="btn-toggle-lights" title="Toggle Ceiling Lamps" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all bg-amber-100 text-amber-900 border border-amber-300/80 hover:bg-amber-200">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+          </svg>
+          <span>Lights</span>
+        </button>
+
+        <button id="btn-toggle-fans" title="Toggle Ceiling Fans" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all bg-sky-100 text-sky-900 border border-sky-300/80 hover:bg-sky-200">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 12m-2 0a2 2 0 104 0 2 2 0 10-4 0M12 10c0-3.5 2-6 4.5-5.5S19 8.5 15 11m-1 2c3.5 0 6 2 5.5 4.5S15.5 19 13 15m-2-1c0 3.5-2 6-4.5 5.5S5 15.5 9 13m1-2c-3.5 0-6-2-5.5-4.5S8.5 5 11 9" />
+          </svg>
+          <span>Fans</span>
+        </button>
+
+        <button id="btn-fps-lock" title="Lock Mouse for FPS Look (ESC to exit)" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all bg-white text-slate-700 border border-slate-200 hover:bg-slate-100">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="7" />
+            <circle cx="12" cy="12" r="2" />
+            <path stroke-linecap="round" d="M12 2v3m0 14v3M2 12h3m14 0h3" />
+          </svg>
+          <span id="fps-lock-label">FPS Look</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Current Location & Human Scale Status Pill -->
+    <div class="flex flex-wrap items-center gap-2 pointer-events-auto">
+      <div class="glass-panel rounded-xl px-3 py-1.5 flex items-center gap-2 text-xs">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span id="current-room-label" class="font-semibold text-slate-900">GF — Living Room (19'-3" × 14'-0")</span>
+      </div>
+      <div class="glass-panel rounded-xl px-3 py-1.5 text-[11px] font-medium text-slate-600 hidden sm:flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+        <span>Eye Level: 5'-10" person (5'-6" eye)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- TOP-RIGHT HUD: Interactive 2D Blueprint Mini-Map                      -->
+  <!-- ===================================================================== -->
+  <div id="minimap-container" class="fixed top-3 right-3 z-30 glass-panel rounded-2xl p-2.5 flex flex-col gap-1.5 transition-all">
+    <div class="flex items-center justify-between gap-3">
+      <div class="flex items-center gap-1.5">
+        <span class="text-[11px] font-bold uppercase tracking-wider text-slate-800" id="minimap-title">Ground Floor Plan</span>
+        <span class="text-[10px] text-slate-400 font-medium hidden sm:inline">27'-8" × 53'-0"</span>
+      </div>
+      <button id="btn-toggle-map" title="Collapse / Expand Map (M)" class="p-1 rounded-lg hover:bg-slate-200/70 text-slate-600 transition-colors">
+        <svg id="map-toggle-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+    </div>
+
+    <div id="minimap-body" class="flex flex-col items-center">
+      <canvas id="minimap-canvas" width="166" height="318" class="rounded-xl border border-slate-200/90 bg-white cursor-pointer shadow-inner"></canvas>
+      <span class="text-[10px] text-slate-500 mt-1">Click any room to teleport · Press <kbd class="px-1 py-0.5 bg-slate-100 border border-slate-200 rounded text-[9px] font-semibold">M</kbd></span>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- BOTTOM-LEFT HUD: Minimal Controls Legend & Touch Movement Pad         -->
+  <!-- ===================================================================== -->
+  <div class="fixed bottom-3 left-3 z-30 flex flex-col gap-2">
+    <!-- On-screen Touch D-Pad (shown on coarse pointer / small screens) -->
+    <div id="touch-dpad" class="hidden sm:hidden glass-panel rounded-2xl p-2 grid grid-cols-3 gap-1 w-32">
+      <div></div>
+      <button data-dir="forward" class="touch-btn h-9 rounded-xl bg-slate-100 active:bg-slate-900 active:text-white flex items-center justify-center text-slate-700 font-bold text-sm">▲</button>
+      <div></div>
+      <button data-dir="left" class="touch-btn h-9 rounded-xl bg-slate-100 active:bg-slate-900 active:text-white flex items-center justify-center text-slate-700 font-bold text-sm">◀</button>
+      <button data-dir="backward" class="touch-btn h-9 rounded-xl bg-slate-100 active:bg-slate-900 active:text-white flex items-center justify-center text-slate-700 font-bold text-sm">▼</button>
+      <button data-dir="right" class="touch-btn h-9 rounded-xl bg-slate-100 active:bg-slate-900 active:text-white flex items-center justify-center text-slate-700 font-bold text-sm">▶</button>
+    </div>
+
+    <!-- Minimal Keyboard & Mouse Legend -->
+    <div class="glass-panel rounded-xl px-3 py-2 text-[11px] text-slate-600 hidden sm:flex items-center gap-3">
+      <span class="flex items-center gap-1"><kbd class="px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded font-semibold text-slate-800">WASD</kbd> / Arrows: Walk</span>
+      <span class="text-slate-300">·</span>
+      <span class="flex items-center gap-1"><kbd class="px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded font-semibold text-slate-800">Shift</kbd> Fast</span>
+      <span class="text-slate-300">·</span>
+      <span>Drag / Mouse: Look</span>
+      <span class="text-slate-300">·</span>
+      <span><kbd class="px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded font-semibold text-slate-800">Q/E</kbd> Turn</span>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- BOTTOM-RIGHT HUD: Dynamic Ceiling Height Control Button & Popover     -->
+  <!-- ===================================================================== -->
+  <div class="fixed bottom-3 right-3 z-40 flex flex-col items-end gap-2">
+    <!-- Popover Adjustment Panel -->
+    <div id="ceiling-panel" class="hidden glass-panel rounded-2xl p-4 w-72 shadow-2xl border border-slate-200/90">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wide">Adjust Ceiling Height</h3>
+          <p class="text-[11px] text-slate-500">Dynamically rebuilds walls, fixtures &amp; stairs</p>
+        </div>
+        <button id="btn-close-ceiling" class="p-1 rounded-lg hover:bg-slate-100 text-slate-500">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Current Readout + Stepper Buttons -->
+      <div class="flex items-center justify-between bg-slate-50 border border-slate-200/80 rounded-xl p-2 mb-3">
+        <button id="btn-height-minus" class="w-9 h-9 rounded-lg bg-white border border-slate-200 hover:bg-slate-900 hover:text-white text-slate-800 font-bold text-lg flex items-center justify-center transition-colors shadow-sm" title="Decrease by 3 inches">
+          −
+        </button>
+        <div class="text-center">
+          <div id="ceiling-readout-main" class="text-xl font-bold text-slate-900 leading-tight">10'-0"</div>
+          <div id="ceiling-readout-sub" class="text-[10px] font-medium text-slate-500">3.05 m · FF Level: 12'-0"</div>
+        </div>
+        <button id="btn-height-plus" class="w-9 h-9 rounded-lg bg-white border border-slate-200 hover:bg-slate-900 hover:text-white text-slate-800 font-bold text-lg flex items-center justify-center transition-colors shadow-sm" title="Increase by 3 inches">
+          +
+        </button>
+      </div>
+
+      <!-- Range Slider (8'-6" to 14'-0") -->
+      <div class="mb-3">
+        <input id="ceiling-slider" type="range" min="8.5" max="14.0" step="0.25" value="10.0" class="w-full height-slider" />
+        <div class="flex justify-between text-[10px] font-medium text-slate-400 mt-1">
+          <span>8'-6"</span>
+          <span>10'-0"</span>
+          <span>12'-0"</span>
+          <span>14'-0"</span>
+        </div>
+      </div>
+
+      <!-- Quick Presets -->
+      <div class="grid grid-cols-3 gap-1.5">
+        <button data-preset="9.0" class="preset-btn py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors">9'-0"</button>
+        <button data-preset="9.5" class="preset-btn py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors">9'-6"</button>
+        <button data-preset="10.0" class="preset-btn py-1.5 rounded-lg text-xs font-semibold border border-slate-900 bg-slate-900 text-white transition-colors">10'-0"</button>
+        <button data-preset="10.5" class="preset-btn py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors">10'-6"</button>
+        <button data-preset="11.0" class="preset-btn py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors">11'-0"</button>
+        <button data-preset="12.0" class="preset-btn py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors">12'-0"</button>
+      </div>
+    </div>
+
+    <!-- Main Bottom-Right Ceiling Height Trigger Button -->
+    <button id="btn-ceiling-toggle" class="glass-panel rounded-2xl px-4 py-2.5 flex items-center gap-2.5 hover:bg-white transition-all shadow-xl border border-slate-300/80 group">
+      <div class="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center group-hover:scale-105 transition-transform">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8 7l4-4 4 4M8 17l4 4 4-4M12 3v18M4 3h16M4 21h16" />
+        </svg>
+      </div>
+      <div class="text-left">
+        <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 leading-none">Ceiling Height</div>
+        <div id="btn-ceiling-value" class="text-sm font-bold text-slate-900 leading-tight mt-0.5">10'-0"</div>
+      </div>
+      <svg id="ceiling-chevron" class="w-4 h-4 text-slate-400 transition-transform" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" />
+      </svg>
+    </button>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- APPLICATION JAVASCRIPT                                                -->
+  <!-- ===================================================================== -->
+  <script>
+    (function () {
+      'use strict';
+
+      // =========================================================================
+      // 1. ARCHITECTURAL CONSTANTS & SCALE
+      // =========================================================================
+      const FT = 0.3048;                 // Exact feet-to-meters conversion (1 ft = 0.3048 m)
+      const PLAN_W = 27.667;             // 27'-8" total East-West width
+      const PLAN_L = 53.0;               // 53'-0" total North-South length
+      const PLINTH = 1.5;                // 1'-6" Ground Floor elevation above exterior ground
+      const SLAB_THICK = 0.5;            // 6" RCC slab thickness between GF ceiling & FF floor
+      const EYE_HEIGHT = 5.5;            // 5'-6" anatomical eye level for a 5'-10" person
+      const PLAYER_RADIUS = 0.70;        // Collision radius (~8.4") for smooth passage through 2'-6" doors
+
+      // Dynamic Architectural State
+      let ceilingHeight = 10.0;          // Default 10'-0" clear height (adjustable 8'-6" to 14'-0")
+      let lightsOn = true;
+      let fansOn = true;
+      let isPointerLocked = false;
+      let mapCollapsed = false;
+
+      // Computed floor elevations (in feet)
+      function getGFY() { return PLINTH; }
+      function getFloorToFloor() { return ceilingHeight + SLAB_THICK; }
+      function getFFY() { return PLINTH + ceilingHeight + SLAB_THICK; }
+
+      // Format decimal feet into architectural feet-inches string (e.g., 10.25 -> 10'-3")
+      function formatFeetInches(ftVal) {
+        const totalInches = Math.round(ftVal * 12);
+        const ft = Math.floor(totalInches / 12);
+        const inch = totalInches % 12;
+        return `${ft}'-${inch}"`;
+      }
+
+      // =========================================================================
+      // 2. THREE.JS CORE SETUP (Renderer, Scene, Camera, Sky & Exterior Site)
+      // =========================================================================
+      const canvas = document.getElementById('viewport-canvas');
+      let renderer, scene, camera;
+
+      try {
+        renderer = new THREE.WebGLRenderer({
+          canvas: canvas,
+          antialias: true,
+          powerPreference: 'high-performance'
+        });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.08;
+      } catch (err) {
+        console.error('WebGL initialization failed:', err);
+        document.body.innerHTML = '<div class="p-8 text-center text-slate-800 font-sans">Unable to initialize 3D WebGL viewport. Please enable hardware acceleration in your browser.</div>';
+        return;
+      }
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xcce4fa); // Crisp bright daytime sky
+      scene.fog = new THREE.Fog(0xdbeafe, 65 * FT, 190 * FT);
+
+      // Perspective camera with natural 62-degree vertical FOV so room proportions feel accurate
+      camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.08, 250 * FT);
+      camera.rotation.order = 'YXZ';
+
+      // Global Lighting Rig (Daylight sky + Sun + Toggleable Interior Lamps)
+      const hemiLight = new THREE.HemisphereLight(0xf6fbff, 0xeae2d3, 0.78);
+      hemiLight.position.set(PLAN_W * 0.5 * FT, 40 * FT, PLAN_L * 0.5 * FT);
+      scene.add(hemiLight);
+
+      const sunLight = new THREE.DirectionalLight(0xfff8eb, 0.85);
+      sunLight.position.set(55 * FT, 65 * FT, 80 * FT);
+      scene.add(sunLight);
+
+      const fillLight = new THREE.DirectionalLight(0xeef6ff, 0.30);
+      fillLight.position.set(-40 * FT, 35 * FT, -35 * FT);
+      scene.add(fillLight);
+
+      // =========================================================================
+      // 3. PROCEDURAL CANVAS TEXTURES & SHARED MATERIALS
+      // =========================================================================
+      function createTileTexture(options) {
+        const size = 512;
+        const c = document.createElement('canvas');
+        c.width = size;
+        c.height = size;
+        const ctx = c.getContext('2d');
+
+        // Base fill
+        ctx.fillStyle = options.baseColor || '#faf9f5';
+        ctx.fillRect(0, 0, size, size);
+
+        // Subtle stone / vitrified porcelain micro-variation
+        const count = options.speckles || 900;
+        for (let i = 0; i < count; i++) {
+          const x = Math.random() * size;
+          const y = Math.random() * size;
+          const r = Math.random() * (options.speckleRadius || 2.2);
+          ctx.fillStyle = options.speckleColor || 'rgba(200, 196, 188, 0.08)';
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Subtle vitrified marble veining for white indoor tiles
+        if (options.veining) {
+          ctx.strokeStyle = 'rgba(210, 208, 202, 0.14)';
+          ctx.lineWidth = 1.5;
+          for (let v = 0; v < 6; v++) {
+            ctx.beginPath();
+            let vx = Math.random() * size;
+            let vy = Math.random() * size;
+            ctx.moveTo(vx, vy);
+            for (let s = 0; s < 5; s++) {
+              vx += (Math.random() - 0.5) * 90;
+              vy += (Math.random() - 0.5) * 90;
+              ctx.lineTo(vx, vy);
+            }
+            ctx.stroke();
+          }
+        }
+
+        // Crisp 2x2 tile grid grout lines
+        const grid = options.grid || 2;
+        const step = size / grid;
+        ctx.strokeStyle = options.groutColor || '#d6d4ce';
+        ctx.lineWidth = options.groutWidth || 3;
+
+        for (let g = 0; g <= grid; g++) {
+          const pos = g * step;
+          ctx.beginPath();
+          ctx.moveTo(pos, 0);
+          ctx.lineTo(pos, size);
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.moveTo(0, pos);
+          ctx.lineTo(size, pos);
+          ctx.stroke();
+        }
+
+        // Subtle inner edge bevel highlight
+        ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+        ctx.lineWidth = 1;
+        for (let gx = 0; gx < grid; gx++) {
+          for (let gy = 0; gy < grid; gy++) {
+            ctx.strokeRect(gx * step + 2, gy * step + 2, step - 4, step - 4);
+          }
+        }
+
+        const tex = new THREE.CanvasTexture(c);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.encoding = THREE.sRGBEncoding;
+        tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+        return tex;
+      }
+
+      function createPlasterTexture(baseHex, speckleRgba) {
+        const size = 256;
+        const c = document.createElement('canvas');
+        c.width = size;
+        c.height = size;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = baseHex;
+        ctx.fillRect(0, 0, size, size);
+
+        for (let i = 0; i < 2400; i++) {
+          ctx.fillStyle = speckleRgba;
+          ctx.fillRect(Math.random() * size, Math.random() * size, 2, 2);
+        }
+
+        const tex = new THREE.CanvasTexture(c);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(3, 3);
+        tex.encoding = THREE.sRGBEncoding;
+        return tex;
+      }
+
+      function createWoodTexture() {
+        const size = 256;
+        const c = document.createElement('canvas');
+        c.width = size;
+        c.height = size;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#b98d5e';
+        ctx.fillRect(0, 0, size, size);
+
+        for (let x = 0; x < size; x += 2) {
+          const alpha = 0.04 + Math.random() * 0.08;
+          ctx.fillStyle = x % 4 === 0 ? `rgba(110, 68, 30, ${alpha})` : `rgba(225, 190, 145, ${alpha})`;
+          ctx.fillRect(x, 0, 2, size);
+        }
+        const tex = new THREE.CanvasTexture(c);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.encoding = THREE.sRGBEncoding;
+        return tex;
+      }
+
+      // Reusable shared textures
+      const texWhiteTile = createTileTexture({
+        baseColor: '#fafaf7',
+        groutColor: '#d7d5cf',
+        groutWidth: 2.6,
+        grid: 2,
+        veining: true,
+        speckles: 600
+      });
+
+      const texMatteTile = createTileTexture({
+        baseColor: '#ecebe6',
+        groutColor: '#c8c6bf',
+        groutWidth: 3.2,
+        grid: 2,
+        veining: false,
+        speckles: 1400,
+        speckleColor: 'rgba(130, 128, 122, 0.10)'
+      });
+
+      const texIvoryWall = createPlasterTexture('#F6F1E5', 'rgba(185, 172, 150, 0.06)');
+      const texExteriorWall = createPlasterTexture('#EAE2D3', 'rgba(155, 142, 120, 0.08)');
+      const texWood = createWoodTexture();
+
+      // Shared Architectural Materials
+      const MAT = {
+        ivoryWall: new THREE.MeshStandardMaterial({ map: texIvoryWall, roughness: 0.88, metalness: 0.0 }),
+        exteriorWall: new THREE.MeshStandardMaterial({ map: texExteriorWall, roughness: 0.90, metalness: 0.0 }),
+        ceilingGypsum: new THREE.MeshStandardMaterial({ color: 0xfaf9f6, roughness: 0.92, metalness: 0.0 }),
+        ceilingDrop: new THREE.MeshStandardMaterial({ color: 0xf4f2ec, roughness: 0.88, metalness: 0.0 }),
+        skirting: new THREE.MeshStandardMaterial({ color: 0xf2efe8, roughness: 0.40, metalness: 0.04 }),
+        concreteSlab: new THREE.MeshStandardMaterial({ color: 0xd8d5ce, roughness: 0.85, metalness: 0.0 }),
+        plinthBase: new THREE.MeshStandardMaterial({ color: 0xc8c3ba, roughness: 0.92, metalness: 0.0 }),
+        woodDoor: new THREE.MeshStandardMaterial({ map: texWood, roughness: 0.55, metalness: 0.05 }),
+        woodFrame: new THREE.MeshStandardMaterial({ color: 0x8e643b, roughness: 0.60, metalness: 0.05 }),
+        chromeHandle: new THREE.MeshStandardMaterial({ color: 0xd1d5db, roughness: 0.25, metalness: 0.85 }),
+        windowFrame: new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.42, metalness: 0.55 }),
+        windowGlass: new THREE.MeshStandardMaterial({
+          color: 0xcbe8ff,
+          transparent: true,
+          opacity: 0.26,
+          roughness: 0.08,
+          metalness: 0.35,
+          side: THREE.DoubleSide,
+          depthWrite: false
+        }),
+        railingMetal: new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.35, metalness: 0.72 }),
+        railingGlass: new THREE.MeshStandardMaterial({
+          color: 0xdbeafe,
+          transparent: true,
+          opacity: 0.22,
+          roughness: 0.1,
+          metalness: 0.25,
+          side: THREE.DoubleSide,
+          depthWrite: false
+        }),
+        stairNosing: new THREE.MeshStandardMaterial({ color: 0xb5b0a6, roughness: 0.55, metalness: 0.1 }),
+        lampTrim: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.1 }),
+        lampDiffuserOn: new THREE.MeshBasicMaterial({ color: 0xfffef4 }),
+        lampDiffuserOff: new THREE.MeshStandardMaterial({ color: 0xdce0e5, roughness: 0.45, metalness: 0.05 }),
+        coveGlowOn: new THREE.MeshBasicMaterial({ color: 0xffefc9, transparent: true, opacity: 0.72 }),
+        coveGlowOff: new THREE.MeshBasicMaterial({ color: 0xe8e5dd, transparent: true, opacity: 0.15 }),
+        fanWhite: new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.28, metalness: 0.15 }),
+        fanAccent: new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.30, metalness: 0.65 }),
+        acBody: new THREE.MeshStandardMaterial({ color: 0xf9fafb, roughness: 0.25, metalness: 0.08 }),
+        acVent: new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.60, metalness: 0.20 }),
+        acLed: new THREE.MeshBasicMaterial({ color: 0x34d399 })
+      };
+
+      // Helper to create tiled floor material scaled cleanly to exact 2ft x 2ft (or 1.5ft) tile grid
+      // Tracks disposable per-build cloned textures so ceiling rebuilds never leak GPU memory
+      let buildTextures = [];
+      let buildMaterials = [];
+      function makeFloorMaterial(isWhiteVitrified, widthFt, depthFt) {
+        const baseTex = isWhiteVitrified ? texWhiteTile : texMatteTile;
+        const tileSpanFt = isWhiteVitrified ? 4.0 : 3.0; // Each canvas has 2x2 tiles -> 4ft = 2ft/tile
+        const tex = baseTex.clone();
+        tex.needsUpdate = true;
+        tex.repeat.set(widthFt / tileSpanFt, depthFt / tileSpanFt);
+        buildTextures.push(tex);
+
+        const mat = new THREE.MeshStandardMaterial({
+          map: tex,
+          roughness: isWhiteVitrified ? 0.22 : 0.68,
+          metalness: isWhiteVitrified ? 0.05 : 0.01
+        });
+        buildMaterials.push(mat);
+        return mat;
+      }
+
+      // =========================================================================
+      // 4. EXTERIOR GROUND & SITE CONTEXT (Persistent across height rebuilds)
+      // =========================================================================
+      function buildExteriorSite() {
+        const siteGroup = new THREE.Group();
+
+        // Expansive natural site ground plane (soft sunlit grass/earth outside windows)
+        const lawnGeo = new THREE.PlaneGeometry(340 * FT, 340 * FT);
+        const lawnMat = new THREE.MeshStandardMaterial({ color: 0xaec49c, roughness: 0.96, metalness: 0.0 });
+        const lawn = new THREE.Mesh(lawnGeo, lawnMat);
+        lawn.rotation.x = -Math.PI / 2;
+        lawn.position.set(PLAN_W * 0.5 * FT, -0.02 * FT, PLAN_L * 0.5 * FT);
+        siteGroup.add(lawn);
+
+        // Clean concrete plinth apron / paved pathway around the home perimeter
+        const apronGeo = new THREE.BoxGeometry((PLAN_W + 7.0) * FT, 0.08 * FT, (PLAN_L + 9.0) * FT);
+        const apronMat = new THREE.MeshStandardMaterial({ color: 0xd5d2c9, roughness: 0.90 });
+        const apron = new THREE.Mesh(apronGeo, apronMat);
+        apron.position.set(PLAN_W * 0.5 * FT, 0.02 * FT, (PLAN_L * 0.5 + 1.0) * FT);
+        siteGroup.add(apron);
+
+        // Subtle low compound boundary wall far out so the horizon looks architectural
+        const bwMat = new THREE.MeshStandardMaterial({ color: 0xe6dfd3, roughness: 0.92 });
+        const margin = 16;
+        const bwH = 4.5 * FT;
+        const bwT = 0.75 * FT;
+        const addBW = (cx, cz, w, d) => {
+          const m = new THREE.Mesh(new THREE.BoxGeometry(w * FT, bwH, d * FT), bwMat);
+          m.position.set(cx * FT, bwH * 0.5, cz * FT);
+          siteGroup.add(m);
+        };
+        addBW(PLAN_W / 2, -margin, PLAN_W + margin * 2, 0.75);
+        addBW(-margin, PLAN_L / 2, 0.75, PLAN_L + margin * 2);
+        addBW(PLAN_W + margin, PLAN_L / 2, 0.75, PLAN_L + margin * 2);
+
+        scene.add(siteGroup);
+      }
+      buildExteriorSite();
+
+      // =========================================================================
+      // 5. HOUSE GEOMETRY BUILDER (Rebuildable on Dynamic Ceiling Height Change)
+      // =========================================================================
+      let houseGroup = null;
+      let collidersGF = [];
+      let collidersFF = [];
+      let fanRotors = [];
+      let lampMeshes = [];
+      let coveMeshes = [];
+      let interiorLights = [];
+
+      // Dispose previous house group cleanly to prevent any WebGL memory leak
+      function disposeHouse() {
+        if (houseGroup) {
+          houseGroup.traverse((obj) => {
+            if (obj.geometry) obj.geometry.dispose();
+          });
+          scene.remove(houseGroup);
+          houseGroup = null;
+        }
+        for (const t of buildTextures) t.dispose();
+        for (const m of buildMaterials) m.dispose();
+        buildTextures = [];
+        buildMaterials = [];
+        collidersGF = [];
+        collidersFF = [];
+        fanRotors = [];
+        lampMeshes = [];
+        coveMeshes = [];
+        interiorLights = [];
+      }
+
+      // Helper: Add an axis-aligned 3D box specified in exact architectural FEET bounds
+      function addBox(group, minX, maxX, yBot, yTop, minZ, maxZ, material, collidersArr) {
+        const w = maxX - minX;
+        const h = yTop - yBot;
+        const d = maxZ - minZ;
+        if (w <= 0.001 || h <= 0.001 || d <= 0.001) return null;
+
+        const mesh = new THREE.Mesh(
+          new THREE.BoxGeometry(w * FT, h * FT, d * FT),
+          material
+        );
+        mesh.position.set(
+          ((minX + maxX) * 0.5) * FT,
+          ((yBot + yTop) * 0.5) * FT,
+          ((minZ + maxZ) * 0.5) * FT
+        );
+        group.add(mesh);
+
+        if (collidersArr) {
+          collidersArr.push({ minX, maxX, minZ, maxZ });
+        }
+        return mesh;
+      }
+
+      // Helper: Add a room floor slab top finish (non-overlapping exact footprint)
+      function addTiledFloor(group, minX, maxX, minZ, maxZ, topY, thickness, isWhiteVitrified) {
+        const w = maxX - minX;
+        const d = maxZ - minZ;
+        if (w <= 0.01 || d <= 0.01) return;
+        const mat = makeFloorMaterial(isWhiteVitrified, w, d);
+        addBox(group, minX, maxX, topY - thickness, topY, minZ, maxZ, mat, null);
+      }
+
+      // Helper: Add 3D Door Frame + Open Teak Shutter (~82 deg) so every room is freely walkable
+      function addDoorAssembly(group, axis, wallMin, wallMax, openStart, openEnd, floorY, doorH, swingSide, hingeAtEnd) {
+        const frameT = 0.14;
+        const frameDepth = (wallMax - wallMin) + 0.08;
+        const frameMid = (wallMin + wallMax) * 0.5;
+        const openW = openEnd - openStart;
+        const shutterW = openW - frameT * 2;
+        const shutterH = doorH - frameT;
+        const shutterT = 0.13;
+
+        if (axis === 'X') {
+          // Left & Right Jambs + Top Header
+          addBox(group, openStart, openStart + frameT, floorY, floorY + doorH, frameMid - frameDepth / 2, frameMid + frameDepth / 2, MAT.woodFrame, null);
+          addBox(group, openEnd - frameT, openEnd, floorY, floorY + doorH, frameMid - frameDepth / 2, frameMid + frameDepth / 2, MAT.woodFrame, null);
+          addBox(group, openStart, openEnd, floorY + doorH - frameT, floorY + doorH, frameMid - frameDepth / 2, frameMid + frameDepth / 2, MAT.woodFrame, null);
+
+          // Open Door Leaf pivoted cleanly from hinge jamb
+          const pivot = new THREE.Group();
+          const hingeX = hingeAtEnd ? (openEnd - frameT) : (openStart + frameT);
+          const hingeZ = swingSide > 0 ? wallMax : wallMin;
+          pivot.position.set(hingeX * FT, floorY * FT, hingeZ * FT);
+
+          const leafMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(shutterW * FT, shutterH * FT, shutterT * FT),
+            MAT.woodDoor
+          );
+          const dirX = hingeAtEnd ? -1 : 1;
+          leafMesh.position.set(dirX * (shutterW * 0.5) * FT, (shutterH * 0.5) * FT, 0);
+          pivot.add(leafMesh);
+
+          // Subtle chrome lever handle on both faces
+          const handle = new THREE.Mesh(new THREE.BoxGeometry(0.35 * FT, 0.08 * FT, 0.30 * FT), MAT.chromeHandle);
+          handle.position.set(dirX * (shutterW - 0.35) * FT, 3.2 * FT, 0);
+          pivot.add(handle);
+
+          // Swing open ~80 degrees into the room (away from doorway passage)
+          const angle = 1.40; // ~80 deg
+          pivot.rotation.y = (hingeAtEnd ? 1 : -1) * (swingSide > 0 ? 1 : -1) * angle;
+          group.add(pivot);
+        } else {
+          // Axis === 'Z'
+          addBox(group, frameMid - frameDepth / 2, frameMid + frameDepth / 2, floorY, floorY + doorH, openStart, openStart + frameT, MAT.woodFrame, null);
+          addBox(group, frameMid - frameDepth / 2, frameMid + frameDepth / 2, floorY, floorY + doorH, openEnd - frameT, openEnd, MAT.woodFrame, null);
+          addBox(group, frameMid - frameDepth / 2, frameMid + frameDepth / 2, floorY + doorH - frameT, floorY + doorH, openStart, openEnd, MAT.woodFrame, null);
+
+          const pivot = new THREE.Group();
+          const hingeZ = hingeAtEnd ? (openEnd - frameT) : (openStart + frameT);
+          const hingeX = swingSide > 0 ? wallMax : wallMin;
+          pivot.position.set(hingeX * FT, floorY * FT, hingeZ * FT);
+
+          const leafMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(shutterT * FT, shutterH * FT, shutterW * FT),
+            MAT.woodDoor
+          );
+          const dirZ = hingeAtEnd ? -1 : 1;
+          leafMesh.position.set(0, (shutterH * 0.5) * FT, dirZ * (shutterW * 0.5) * FT);
+          pivot.add(leafMesh);
+
+          const handle = new THREE.Mesh(new THREE.BoxGeometry(0.30 * FT, 0.08 * FT, 0.35 * FT), MAT.chromeHandle);
+          handle.position.set(0, 3.2 * FT, dirZ * (shutterW - 0.35) * FT);
+          pivot.add(handle);
+
+          const angle = 1.40;
+          pivot.rotation.y = (hingeAtEnd ? -1 : 1) * (swingSide > 0 ? 1 : -1) * angle;
+          group.add(pivot);
+        }
+      }
+
+      // Helper: Add Aluminum Window / Ventilator + Glass + Exterior Chajja Weather Shade
+      function addWindowAssembly(group, axis, wallMin, wallMax, openStart, openEnd, floorY, sillH, winH, extSide) {
+        const frameT = 0.14;
+        const mid = (wallMin + wallMax) * 0.5;
+        const depth = 0.24;
+        const yBot = floorY + sillH;
+        const yTop = floorY + sillH + winH;
+        const span = openEnd - openStart;
+
+        if (axis === 'X') {
+          // Outer aluminum frame
+          addBox(group, openStart, openEnd, yBot, yBot + frameT, mid - depth / 2, mid + depth / 2, MAT.windowFrame, null);
+          addBox(group, openStart, openEnd, yTop - frameT, yTop, mid - depth / 2, mid + depth / 2, MAT.windowFrame, null);
+          addBox(group, openStart, openStart + frameT, yBot, yTop, mid - depth / 2, mid + depth / 2, MAT.windowFrame, null);
+          addBox(group, openEnd - frameT, openEnd, yBot, yTop, mid - depth / 2, mid + depth / 2, MAT.windowFrame, null);
+
+          // Center mullion for wider windows
+          if (span >= 3.2) {
+            const cx = (openStart + openEnd) * 0.5;
+            addBox(group, cx - 0.05, cx + 0.05, yBot + frameT, yTop - frameT, mid - 0.06, mid + 0.06, MAT.windowFrame, null);
+          }
+
+          // Translucent sky-reflecting glass pane
+          const glass = new THREE.Mesh(
+            new THREE.PlaneGeometry((span - frameT * 2) * FT, (winH - frameT * 2) * FT),
+            MAT.windowGlass
+          );
+          glass.position.set(((openStart + openEnd) * 0.5) * FT, ((yBot + yTop) * 0.5) * FT, mid * FT);
+          group.add(glass);
+
+          // Exterior RCC Weather Shade (Chajja) matching dashed projections on the architectural plan
+          if (extSide) {
+            const chZ1 = extSide < 0 ? wallMin - 1.15 : wallMax;
+            const chZ2 = extSide < 0 ? wallMin : wallMax + 1.15;
+            addBox(group, openStart - 0.35, openEnd + 0.35, yTop, yTop + 0.25, chZ1, chZ2, MAT.exteriorWall, null);
+          }
+        } else {
+          // Axis === 'Z'
+          addBox(group, mid - depth / 2, mid + depth / 2, yBot, yBot + frameT, openStart, openEnd, MAT.windowFrame, null);
+          addBox(group, mid - depth / 2, mid + depth / 2, yTop - frameT, yTop, openStart, openEnd, MAT.windowFrame, null);
+          addBox(group, mid - depth / 2, mid + depth / 2, yBot, yTop, openStart, openStart + frameT, MAT.windowFrame, null);
+          addBox(group, mid - depth / 2, mid + depth / 2, yBot, yTop, openEnd - frameT, openEnd, MAT.windowFrame, null);
+
+          if (span >= 3.2) {
+            const cz = (openStart + openEnd) * 0.5;
+            addBox(group, mid - 0.06, mid + 0.06, yBot + frameT, yTop - frameT, cz - 0.05, cz + 0.05, MAT.windowFrame, null);
+          }
+
+          const glass = new THREE.Mesh(
+            new THREE.PlaneGeometry((span - frameT * 2) * FT, (winH - frameT * 2) * FT),
+            MAT.windowGlass
+          );
+          glass.rotation.y = Math.PI / 2;
+          glass.position.set(mid * FT, ((yBot + yTop) * 0.5) * FT, ((openStart + openEnd) * 0.5) * FT);
+          group.add(glass);
+
+          if (extSide) {
+            const chX1 = extSide < 0 ? wallMin - 1.15 : wallMax;
+            const chX2 = extSide < 0 ? wallMin : wallMax + 1.15;
+            addBox(group, chX1, chX2, yTop, yTop + 0.25, openStart - 0.35, openEnd + 0.35, MAT.exteriorWall, null);
+          }
+        }
+      }
+
+      /**
+       * Builds a solid 3D wall with exact thickness, openings (doors, archways, windows, ventilators),
+       * lintels, sill walls, 4-inch interior skirting, and automatically registers passable/solid colliders.
+       */
+      function addWallWithOpenings(group, collidersArr, opts) {
+        const {
+          axis,        // 'X' or 'Z'
+          start, end,  // span along axis
+          wMin, wMax,  // thickness bounds perpendicular to axis
+          floorY,
+          height,
+          openings = [],
+          skirtingSides = [], // e.g., [-1, 1] meaning negative/positive perpendicular face
+          material = MAT.ivoryWall
+        } = opts;
+
+        const sorted = [...openings].sort((a, b) => a.start - b.start);
+        const skirtH = 0.33; // 4-inch skirting
+        const skirtT = 0.025;
+
+        const buildPier = (s, e) => {
+          if (e - s <= 0.005) return;
+          if (axis === 'X') {
+            addBox(group, s, e, floorY, floorY + height, wMin, wMax, material, collidersArr);
+            for (const side of skirtingSides) {
+              const sz1 = side < 0 ? wMin - skirtT : wMax;
+              const sz2 = side < 0 ? wMin : wMax + skirtT;
+              addBox(group, s, e, floorY, floorY + skirtH, sz1, sz2, MAT.skirting, null);
+            }
+          } else {
+            addBox(group, wMin, wMax, floorY, floorY + height, s, e, material, collidersArr);
+            for (const side of skirtingSides) {
+              const sx1 = side < 0 ? wMin - skirtT : wMax;
+              const sx2 = side < 0 ? wMin : wMax + skirtT;
+              addBox(group, sx1, sx2, floorY, floorY + skirtH, s, e, MAT.skirting, null);
+            }
+          }
+        };
+
+        let cursor = start;
+        for (const op of sorted) {
+          buildPier(cursor, op.start);
+
+          const opSill = op.sill || 0;
+          const opTop = Math.min(op.top, height - 0.05);
+
+          // Sill wall below windows/ventilators (also acts as solid collision blocker)
+          if (opSill > 0.01) {
+            if (axis === 'X') {
+              addBox(group, op.start, op.end, floorY, floorY + opSill, wMin, wMax, material, collidersArr);
+              for (const side of skirtingSides) {
+                const sz1 = side < 0 ? wMin - skirtT : wMax;
+                const sz2 = side < 0 ? wMin : wMax + skirtT;
+                addBox(group, op.start, op.end, floorY, floorY + skirtH, sz1, sz2, MAT.skirting, null);
+              }
+            } else {
+              addBox(group, wMin, wMax, floorY, floorY + opSill, op.start, op.end, material, collidersArr);
+              for (const side of skirtingSides) {
+                const sx1 = side < 0 ? wMin - skirtT : wMax;
+                const sx2 = side < 0 ? wMin : wMax + skirtT;
+                addBox(group, sx1, sx2, floorY, floorY + skirtH, op.start, op.end, MAT.skirting, null);
+              }
+            }
+          }
+
+          // Lintel wall above opening (no floor collider so doors/archways are passable!)
+          if (opTop < height - 0.01) {
+            if (axis === 'X') {
+              addBox(group, op.start, op.end, floorY + opTop, floorY + height, wMin, wMax, material, null);
+            } else {
+              addBox(group, wMin, wMax, floorY + opTop, floorY + height, op.start, op.end, material, null);
+            }
+          }
+
+          // Architectural joinery (Doors or Windows)
+          if (op.type === 'door') {
+            addDoorAssembly(group, axis, wMin, wMax, op.start, op.end, floorY, opTop, op.swingSide || 1, !!op.hingeAtEnd);
+          } else if (op.type === 'window' || op.type === 'ventilator') {
+            addWindowAssembly(group, axis, wMin, wMax, op.start, op.end, floorY, opSill, opTop - opSill, op.extSide || 0);
+          }
+
+          cursor = op.end;
+        }
+        buildPier(cursor, end);
+      }
+
+      // =========================================================================
+      // 6. FIXTURE BUILDERS (False Ceiling, Square LED Lamps, Ceiling Fans, Split AC)
+      // =========================================================================
+
+      // Recessed Square LED Panel Lamp (~10" x 10")
+      function addSquareLamp(group, x, z, ceilingY) {
+        const outer = 0.84 * FT;
+        const inner = 0.68 * FT;
+        const trimH = 0.04 * FT;
+
+        const trim = new THREE.Mesh(new THREE.BoxGeometry(outer, trimH, outer), MAT.lampTrim);
+        trim.position.set(x * FT, ceilingY * FT - trimH * 0.5, z * FT);
+        group.add(trim);
+
+        const diff = new THREE.Mesh(
+          new THREE.PlaneGeometry(inner, inner),
+          lightsOn ? MAT.lampDiffuserOn : MAT.lampDiffuserOff
+        );
+        diff.rotation.x = Math.PI / 2;
+        diff.position.set(x * FT, ceilingY * FT - trimH - 0.004, z * FT);
+        group.add(diff);
+        lampMeshes.push(diff);
+      }
+
+      // Simple Gypsum False Ceiling with 1.5 ft perimeter drop (5" drop) + warm cove glow
+      function addFalseCeiling(group, minX, maxX, minZ, maxZ, floorY, H, borderW) {
+        const bw = borderW || 1.5;
+        const trayY = floorY + H - 0.12;
+        const dropY = floorY + H - 0.54; // 5-inch perimeter drop
+        const topY = floorY + H;
+
+        // Central recessed tray ceiling
+        addBox(group, minX, maxX, trayY, topY, minZ, maxZ, MAT.ceilingGypsum, null);
+
+        // 4 Perimeter drop panels (non-overlapping corners)
+        addBox(group, minX, maxX, dropY, trayY, minZ, minZ + bw, MAT.ceilingDrop, null); // North drop
+        addBox(group, minX, maxX, dropY, trayY, maxZ - bw, maxZ, MAT.ceilingDrop, null); // South drop
+        addBox(group, minX, minX + bw, dropY, trayY, minZ + bw, maxZ - bw, MAT.ceilingDrop, null); // West drop
+        addBox(group, maxX - bw, maxX, dropY, trayY, minZ + bw, maxZ - bw, MAT.ceilingDrop, null); // East drop
+
+        // Subtle warm recessed cove light glow tucked along inner lip of the perimeter drop
+        const coveH = 0.09;
+        const coveY1 = dropY + 0.12;
+        const coveY2 = coveY1 + coveH;
+        const coveMat = lightsOn ? MAT.coveGlowOn : MAT.coveGlowOff;
+        const eps = 0.015;
+
+        const addCove = (x1, x2, z1, z2) => {
+          const m = addBox(group, x1, x2, coveY1, coveY2, z1, z2, coveMat, null);
+          if (m) coveMeshes.push(m);
+        };
+        addCove(minX + bw, maxX - bw, minZ + bw, minZ + bw + eps);
+        addCove(minX + bw, maxX - bw, maxZ - bw - eps, maxZ - bw);
+        addCove(minX + bw, minX + bw + eps, minZ + bw, maxZ - bw);
+        addCove(maxX - bw - eps, maxX - bw, minZ + bw, maxZ - bw);
+
+        return { trayY, dropY };
+      }
+
+      // Modern White 3-Blade Ceiling Fan (rotates continuously when fansOn === true)
+      function addCeilingFan(group, x, z, trayY) {
+        const fanGroup = new THREE.Group();
+        fanGroup.position.set(x * FT, trayY * FT, z * FT);
+
+        // Adapt downrod slightly at very low ceiling heights so blades always stay well clear of head height
+        const rodLen = ceilingHeight < 9.25 ? 0.65 : 1.05;
+
+        // Ceiling canopy cup
+        const canopy = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.14 * FT, 0.24 * FT, 0.22 * FT, 18),
+          MAT.fanWhite
+        );
+        canopy.position.y = -0.11 * FT;
+        fanGroup.add(canopy);
+
+        // Vertical downrod
+        const rod = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.035 * FT, 0.035 * FT, rodLen * FT, 12),
+          MAT.fanWhite
+        );
+        rod.position.y = -(rodLen * 0.5) * FT;
+        fanGroup.add(rod);
+
+        // Rotating Hub + 3 Blades
+        const rotor = new THREE.Group();
+        rotor.position.y = -rodLen * FT;
+
+        const motor = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.38 * FT, 0.36 * FT, 0.26 * FT, 24),
+          MAT.fanWhite
+        );
+        rotor.add(motor);
+
+        const accentRing = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.39 * FT, 0.39 * FT, 0.04 * FT, 24),
+          MAT.fanAccent
+        );
+        accentRing.position.y = -0.05 * FT;
+        rotor.add(accentRing);
+
+        // 3 contoured blades (48-inch sweep -> ~2.0 ft radius)
+        const bladeLen = 1.65 * FT;
+        const bladeW = 0.38 * FT;
+        const bladeT = 0.028 * FT;
+
+        for (let i = 0; i < 3; i++) {
+          const arm = new THREE.Group();
+          arm.rotation.y = (i * Math.PI * 2) / 3;
+
+          const bracket = new THREE.Mesh(
+            new THREE.BoxGeometry(0.35 * FT, 0.04 * FT, 0.12 * FT),
+            MAT.fanAccent
+          );
+          bracket.position.x = 0.42 * FT;
+          arm.add(bracket);
+
+          const blade = new THREE.Mesh(
+            new THREE.BoxGeometry(bladeLen, bladeT, bladeW),
+            MAT.fanWhite
+          );
+          blade.position.set(0.45 * FT + bladeLen * 0.5, 0, 0);
+          blade.rotation.x = 0.14; // Realistic aerodynamic pitch
+          arm.add(blade);
+
+          rotor.add(arm);
+        }
+
+        // Randomize initial phase so fans don't spin in robotic lockstep
+        rotor.rotation.y = Math.random() * Math.PI * 2;
+        fanGroup.add(rotor);
+        group.add(fanGroup);
+        fanRotors.push(rotor);
+      }
+
+      // Sleek Modern Wall-Mounted Split AC Indoor Unit (3.2' wide x 1.0' tall x 0.75' deep)
+      function addSplitAC(group, x, z, floorY, H, facingDir) {
+        // Mount cleanly ~1 ft below the false ceiling (adapts dynamically with H)
+        const acTopY = floorY + H - 0.85;
+        const acCenterY = acTopY - 0.50;
+
+        const acGroup = new THREE.Group();
+        acGroup.position.set(x * FT, acCenterY * FT, z * FT);
+
+        // Rotate unit to face cleanly into the room
+        // Default local +Z is front of AC unit
+        if (facingDir === 'S') acGroup.rotation.y = 0;
+        else if (facingDir === 'N') acGroup.rotation.y = Math.PI;
+        else if (facingDir === 'E') acGroup.rotation.y = Math.PI / 2;
+        else if (facingDir === 'W') acGroup.rotation.y = -Math.PI / 2;
+
+        const w = 3.2 * FT;
+        const h = 1.0 * FT;
+        const d = 0.75 * FT;
+
+        // Main rear casing sitting flush against the wall (z = 0 to +d)
+        const mainBody = new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.88, d * 0.80), MAT.acBody);
+        mainBody.position.set(0, 0.04 * FT, d * 0.40);
+        acGroup.add(mainBody);
+
+        // Curved front faceplate
+        const frontPanel = new THREE.Mesh(new THREE.BoxGeometry(w * 0.99, h * 0.72, d * 0.25), MAT.acBody);
+        frontPanel.position.set(0, 0.10 * FT, d * 0.84);
+        frontPanel.rotation.x = -0.08;
+        acGroup.add(frontPanel);
+
+        // Dark air-discharge louver slot along bottom front
+        const vent = new THREE.Mesh(new THREE.BoxGeometry(w * 0.86, 0.16 * FT, 0.10 * FT), MAT.acVent);
+        vent.position.set(0, -0.34 * FT, d * 0.82);
+        acGroup.add(vent);
+
+        // Subtle chrome trim line
+        const trim = new THREE.Mesh(new THREE.BoxGeometry(w * 0.96, 0.025 * FT, 0.03 * FT), MAT.chromeHandle);
+        trim.position.set(0, -0.18 * FT, d * 0.96);
+        acGroup.add(trim);
+
+        // Tiny glowing green power LED indicator
+        const led = new THREE.Mesh(new THREE.BoxGeometry(0.06 * FT, 0.03 * FT, 0.02 * FT), MAT.acLed);
+        led.position.set(w * 0.36, -0.06 * FT, d * 0.97);
+        acGroup.add(led);
+
+        group.add(acGroup);
+      }
+
+      // Strategic Soft Interior PointLight
+      function addRoomLight(group, x, z, y, intensity, distanceFt) {
+        const pt = new THREE.PointLight(0xfff6e5, lightsOn ? intensity : 0, distanceFt * FT, 1.5);
+        pt.position.set(x * FT, y * FT, z * FT);
+        pt.userData.baseIntensity = intensity;
+        group.add(pt);
+        interiorLights.push(pt);
+      }
+
+      // =========================================================================
+      // 7. U-SHAPED CONCRETE STAIRCASE + UNDER-STAIR TOILET & STORE BUILDER
+      // =========================================================================
+      // Exact analytical stair elevation function (shared by 3D geometry & player physics!)
+      function getStairElevation(x, z) {
+        const gfY = getGFY();
+        const rise = getFloorToFloor();
+        const ySW = gfY + (7 / 18) * rise;
+        const yNW = gfY + (11 / 18) * rise;
+
+        // Bottom flight (going West: X 10.25 -> 4.25, Z 28.25..31.75)
+        if (z >= 28.25 && x >= 4.25) {
+          const t = Math.max(0, Math.min(1, (10.25 - x) / 6.0));
+          return gfY + t * (7 / 18) * rise;
+        }
+        // SW Landing (X 0.75..4.25, Z 28.25..31.75)
+        if (z >= 28.25 && x < 4.25) {
+          return ySW;
+        }
+        // Mid flight (going North: Z 28.25 -> 24.25, X 0.75..4.25)
+        if (x <= 4.25 && z >= 24.25 && z < 28.25) {
+          const t = Math.max(0, Math.min(1, (28.25 - z) / 4.0));
+          return ySW + t * (4 / 18) * rise;
+        }
+        // NW Landing (X 0.75..4.25, Z 20.75..24.25)
+        if (x <= 4.25 && z < 24.25) {
+          return yNW;
+        }
+        // Top flight (going East: X 4.25 -> 10.25, Z 20.75..24.25)
+        const t = Math.max(0, Math.min(1, (x - 4.25) / 6.0));
+        return yNW + t * (7 / 18) * rise;
+      }
+
+      function buildStaircaseAndUnderStair(group, gfY, H) {
+        const rise = getFloorToFloor();
+        const ffY = getFFY();
+        const stepH = rise / 18;
+        const ySW = gfY + 7 * stepH;
+        const yNW = gfY + 11 * stepH;
+        const waistT = 0.45; // Concrete waist slab thickness
+
+        // 1. Flight 1 (7 risers going West: X 10.25 -> 4.25, Z 28.25..31.75)
+        const tread1 = 6.0 / 7;
+        for (let i = 0; i < 7; i++) {
+          const xHigh = 10.25 - i * tread1;
+          const xLow = xHigh - tread1;
+          const topY = gfY + (i + 1) * stepH;
+          const botY = Math.max(gfY, topY - stepH - waistT);
+          addBox(group, xLow, xHigh, botY, topY, 28.25, 31.75, MAT.ceilingGypsum, null);
+          // Subtle anti-skid nosing on step front edge
+          addBox(group, xHigh - 0.08, xHigh, topY - 0.02, topY + 0.015, 28.25, 31.75, MAT.stairNosing, null);
+        }
+        // Solid triangular support base under Flight 1 (closed neatly on GF)
+        addBox(group, 4.25, 10.25, gfY, gfY + 0.1, 28.25, 31.75, MAT.concreteSlab, null);
+
+        // 2. SW Landing (X 0.75..4.25, Z 28.25..31.75)
+        addBox(group, 0.75, 4.25, ySW - waistT, ySW, 28.25, 31.75, MAT.ceilingGypsum, null);
+        // Enclosed dead space under SW landing (backs the Store room cleanly)
+        addBox(group, 0.75, 4.25, gfY, ySW - waistT, 28.25, 31.75, MAT.ivoryWall, collidersGF);
+
+        // 3. Flight 2 (4 risers going North: Z 28.25 -> 24.25, X 0.75..4.25)
+        const tread2 = 4.0 / 4;
+        for (let i = 0; i < 4; i++) {
+          const zHigh = 28.25 - i * tread2;
+          const zLow = zHigh - tread2;
+          const topY = ySW + (i + 1) * stepH;
+          const botY = topY - stepH - waistT;
+          addBox(group, 0.75, 4.25, botY, topY, zLow, zHigh, MAT.ceilingGypsum, null);
+          addBox(group, 0.75, 4.25, topY - 0.02, topY + 0.015, zHigh - 0.08, zHigh, MAT.stairNosing, null);
+        }
+
+        // 4. NW Landing (X 0.75..4.25, Z 20.75..24.25)
+        addBox(group, 0.75, 4.25, yNW - waistT, yNW, 20.75, 24.25, MAT.ceilingGypsum, null);
+
+        // 5. Flight 3 (7 risers going East: X 4.25 -> 10.25, Z 20.75..24.25)
+        const tread3 = 6.0 / 7;
+        for (let i = 0; i < 7; i++) {
+          const xLow = 4.25 + i * tread3;
+          const xHigh = xLow + tread3;
+          const topY = yNW + (i + 1) * stepH;
+          const botY = topY - stepH - waistT;
+          addBox(group, xLow, xHigh, botY, topY, 20.75, 24.25, MAT.ceilingGypsum, null);
+          addBox(group, xLow, xLow + 0.08, topY - 0.02, topY + 0.015, 20.75, 24.25, MAT.stairNosing, null);
+        }
+
+        // 6. Sleek Minimal Staircase Handrails (inner edges of U-shaped staircase)
+        const railH = 3.0;
+        const addSlopedRail = (x1, y1, z1, x2, y2, z2) => {
+          const p1 = new THREE.Vector3(x1 * FT, (y1 + railH) * FT, z1 * FT);
+          const p2 = new THREE.Vector3(x2 * FT, (y2 + railH) * FT, z2 * FT);
+          const dir = new THREE.Vector3().subVectors(p2, p1);
+          const len = dir.length();
+
+          const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.06 * FT, 0.06 * FT, len, 10), MAT.railingMetal);
+          bar.position.copy(p1).add(p2).multiplyScalar(0.5);
+          bar.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+          group.add(bar);
+
+          // Vertical steel balusters every ~1.5 ft
+          const posts = Math.max(2, Math.round(len / (1.5 * FT)));
+          for (let k = 0; k <= posts; k++) {
+            const t = k / posts;
+            const px = x1 + (x2 - x1) * t;
+            const py = y1 + (y2 - y1) * t;
+            const pz = z1 + (z2 - z1) * t;
+            const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03 * FT, 0.03 * FT, railH * FT, 8), MAT.railingMetal);
+            post.position.set(px * FT, (py + railH * 0.5) * FT, pz * FT);
+            group.add(post);
+          }
+        };
+
+        // Inner edge railings along all 3 flights
+        addSlopedRail(10.15, gfY + stepH * 0.5, 28.35, 4.35, ySW, 28.35);
+        addSlopedRail(4.35, ySW, 28.35, 4.35, yNW, 24.15);
+        addSlopedRail(4.35, yNW, 24.15, 10.15, ffY, 24.15);
+
+        // 7. GF Under-Stair Toilet (X: 0.75..9.60, Z: 20.75..24.25)
+        // South enclosure wall trimmed cleanly to the exact soffit of NW Landing & Flight 3 (zero protrusion!)
+        const toiletWallShape = new THREE.Shape();
+        const soffitNW = yNW - waistT - 0.05;
+        const soffitEast = ffY - waistT - 0.05;
+        toiletWallShape.moveTo(0.75 * FT, gfY * FT);
+        toiletWallShape.lineTo(9.95 * FT, gfY * FT);
+        toiletWallShape.lineTo(9.95 * FT, soffitEast * FT);
+        toiletWallShape.lineTo(4.25 * FT, soffitNW * FT);
+        toiletWallShape.lineTo(0.75 * FT, soffitNW * FT);
+        toiletWallShape.closePath();
+
+        const toiletWallGeo = new THREE.ExtrudeGeometry(toiletWallShape, { depth: 0.35 * FT, bevelEnabled: false });
+        const toiletWallMesh = new THREE.Mesh(toiletWallGeo, MAT.ivoryWall);
+        toiletWallMesh.position.z = 24.25 * FT;
+        group.add(toiletWallMesh);
+        collidersGF.push({ minX: 0.75, maxX: 9.95, minZ: 24.25, maxZ: 24.60 });
+
+        // East wall of Under-Stair Toilet (X: 9.60..9.95, Z: 20.75..24.25) with Door D2
+        const eastSoffitAtDoor = yNW + ((9.60 - 4.25) / 6.0) * (ffY - yNW) - waistT - 0.12;
+        const underToiletWallH = Math.max(6.8, eastSoffitAtDoor - gfY);
+        const underDoorH = Math.min(6.75, underToiletWallH - 0.18);
+        addWallWithOpenings(group, collidersGF, {
+          axis: 'Z',
+          start: 20.75,
+          end: 24.25,
+          wMin: 9.60,
+          wMax: 9.95,
+          floorY: gfY,
+          height: underToiletWallH,
+          skirtingSides: [-1, 1],
+          openings: [
+            { start: 21.30, end: 23.70, sill: 0, top: underDoorH, type: 'door', swingSide: -1, hingeAtEnd: false }
+          ]
+        });
+
+        // Under-Stair Toilet Square Ceiling Lamp (mounted neatly under Flight 3 near East side)
+        addSquareLamp(group, 7.6, 22.5, yNW + ((7.6 - 4.25) / 6.0) * (ffY - yNW) - waistT - 0.08);
+
+        // 8. GF Small Store Room under Mid Flight (X: 0.75..4.25, Z: 24.60..28.25)
+        // East wall of Store (X: 4.25..4.60) with low neat Store door opening
+        const storeMaxH = Math.max(4.0, ySW - waistT - gfY - 0.08);
+        const storeDoorH = Math.min(5.2, storeMaxH - 0.12);
+        addWallWithOpenings(group, collidersGF, {
+          axis: 'Z',
+          start: 24.60,
+          end: 28.25,
+          wMin: 4.25,
+          wMax: 4.60,
+          floorY: gfY,
+          height: storeMaxH,
+          skirtingSides: [1],
+          openings: [
+            { start: 25.00, end: 27.10, sill: 0, top: storeDoorH, type: 'door', swingSide: 1, hingeAtEnd: false }
+          ]
+        });
+
+        // Solid wall blocking side-entry into Flight 1 from the GF central alcove (Z: 28.0..28.30, X: 4.25..10.25)
+        const flight1SideShape = new THREE.Shape();
+        flight1SideShape.moveTo(4.25 * FT, gfY * FT);
+        flight1SideShape.lineTo(10.25 * FT, gfY * FT);
+        flight1SideShape.lineTo(10.25 * FT, (gfY + stepH) * FT);
+        flight1SideShape.lineTo(4.25 * FT, ySW * FT);
+        flight1SideShape.closePath();
+        const flight1SideMesh = new THREE.Mesh(
+          new THREE.ExtrudeGeometry(flight1SideShape, { depth: 0.25 * FT, bevelEnabled: false }),
+          MAT.ivoryWall
+        );
+        flight1SideMesh.position.z = 28.05 * FT;
+        group.add(flight1SideMesh);
+        collidersGF.push({ minX: 4.25, maxX: 10.25, minZ: 28.00, maxZ: 28.35 });
+
+        // 9. FF Stairwell Safety Balustrade (3'-3" high along East edge of FF stairwell opening)
+        const ffRailH = 3.25;
+        // East railing along X = 10.25, Z = 24.25..31.75 (leaves Z = 20.75..24.25 wide open for Flight 3 arrival!)
+        addBox(group, 10.12, 10.30, ffY + ffRailH - 0.14, ffY + ffRailH, 24.20, 31.75, MAT.railingMetal, collidersFF);
+        addBox(group, 10.18, 10.24, ffY + 0.15, ffY + ffRailH - 0.16, 24.25, 31.75, MAT.railingGlass, null);
+        for (let z = 24.25; z <= 31.75; z += 1.875) {
+          addBox(group, 10.14, 10.28, ffY, ffY + ffRailH, z - 0.06, z + 0.06, MAT.railingMetal, null);
+        }
+        // Small protective stub at North-East corner if needed (X: 9.46..10.25 is flush with Left Toilet South wall)
+        addBox(group, 9.46, 10.25, ffY + ffRailH - 0.14, ffY + ffRailH, 20.65, 20.80, MAT.railingMetal, null);
+      }
+
+      // =========================================================================
+      // 8. FULL HOUSE REBUILD (Ground Floor + First Floor + Fixtures + Roof)
+      // =========================================================================
+      function rebuildHouse() {
+        disposeHouse();
+        houseGroup = new THREE.Group();
+
+        const H = ceilingHeight;
+        const gfY = getGFY();
+        const ffY = getFFY();
+        const roofY = ffY + H;
+        const archH = Math.min(8.0, H - 0.65);
+
+        // ---------------------------------------------------------------------
+        // A. GROUND FLOOR PLINTH & NON-OVERLAPPING TILED FLOORS
+        // ---------------------------------------------------------------------
+        // Solid concrete plinth block underneath GF finished tiles
+        addBox(houseGroup, 0, PLAN_W, 0, gfY - 0.04, 0, PLAN_L, MAT.plinthBase, null);
+
+        // White vitrified 2'x2' tiled floors (Main GF interior rooms)
+        addTiledFloor(houseGroup, 0.75, 13.583, 0.75, 14.75, gfY, 0.04, true);    // GF NW Bedroom
+        addTiledFloor(houseGroup, 14.083, 26.917, 0.75, 14.75, gfY, 0.04, true);  // GF NE Bedroom
+        addTiledFloor(houseGroup, 9.458, 18.458, 14.75, 20.75, gfY, 0.04, true);  // GF Central Lobby + door thresholds
+        addTiledFloor(houseGroup, 4.25, 26.917, 20.75, 32.5, gfY, 0.04, true);    // GF Kitchen, Corridor & Stair Alcove
+        addTiledFloor(houseGroup, 0.75, 20.0, 32.5, 46.5, gfY, 0.04, true);       // GF Living Room
+
+        // Matte anti-skid tiles (GF Toilets, Store, & L-Shaped Verandah)
+        addTiledFloor(houseGroup, 0.75, 9.0, 14.75, 20.25, gfY, 0.04, false);     // GF Left Toilet
+        addTiledFloor(houseGroup, 18.917, 26.917, 14.75, 20.25, gfY, 0.04, false);// GF Right Toilet
+        addTiledFloor(houseGroup, 0.75, 9.6, 20.75, 24.25, gfY, 0.04, false);     // GF Under-Stair Toilet
+        addTiledFloor(houseGroup, 0.75, 4.25, 24.6, 28.25, gfY, 0.04, false);     // GF Store
+        addTiledFloor(houseGroup, 0.0, 20.75, 46.5, 53.0, gfY, 0.04, false);      // Front Verandah (20'-9" x 6'-0")
+        addTiledFloor(houseGroup, 20.75, PLAN_W, 32.5, 53.0, gfY, 0.04, false);   // Right Verandah (6'-10" x 20'-6")
+
+        // Exterior Entrance Steps (3 risers at SE edge of Verandah: X 21.25..27.0, Z 50.5..53.0)
+        for (let s = 0; s < 3; s++) {
+          const stepY = gfY - (s + 1) * (PLINTH / 3);
+          const zStart = 53.0 + s * 0.95;
+          addBox(houseGroup, 21.25, 27.0, 0, Math.max(0.05, gfY - s * (PLINTH / 3)), zStart, zStart + 0.95, MAT.concreteSlab, null);
+        }
+
+        // L-Shaped Verandah Perimeter Columns (10" x 10" = 0.833 ft square)
+        const colHalf = 0.416;
+        const verandahCols = [
+          [0.42, 52.58], [7.2, 52.58], [14.0, 52.58], [20.33, 52.58],
+          [27.25, 52.58], [27.25, 45.8], [27.25, 39.2]
+        ];
+        for (const [cx, cz] of verandahCols) {
+          addBox(houseGroup, cx - colHalf, cx + colHalf, gfY, gfY + H, cz - colHalf, cz + colHalf, MAT.exteriorWall, collidersGF);
+        }
+        // Invisible Verandah outer safety boundaries so player can explore entire Verandah without falling off
+        collidersGF.push({ minX: -0.4, maxX: 0.0, minZ: 46.5, maxZ: 53.4 });
+        collidersGF.push({ minX: -0.4, maxX: PLAN_W + 0.4, minZ: 52.85, maxZ: 53.4 });
+        collidersGF.push({ minX: PLAN_W, maxX: PLAN_W + 0.4, minZ: 32.5, maxZ: 53.4 });
+
+        // ---------------------------------------------------------------------
+        // B. GROUND FLOOR WALLS (Exact 9" Exterior & 6" Partition Thickness)
+        // ---------------------------------------------------------------------
+        // 1. North Exterior Wall (Z: 0.0..0.75, X: 0..27.667)
+        addWallWithOpenings(houseGroup, collidersGF, {
+          axis: 'X', start: 0, end: PLAN_W, wMin: 0, wMax: 0.75, floorY: gfY, height: H,
+          skirtingSides: [1],
+          openings: [
+            { start: 4.667, end: 9.667, sill: 3.0, top: 7.5, type: 'window', extSide: -1 },   // NW Bed North W
+            { start: 18.0, end: 23.0, sill: 3.0, top: 7.5, type: 'window', extSide: -1 }      // NE Bed North W
+          ]
+        });
+
+        // 2. West Exterior Wall (X: 0.0..0.75, Z: 0.75..47.25)
+        addWallWithOpenings(houseGroup, collidersGF, {
+          axis: 'Z', start: 0.75, end: 47.25, wMin: 0, wMax: 0.75, floorY: gfY, height: H,
+          skirtingSides: [1],
+          openings: [
+            { start: 5.25, end: 10.25, sill: 3.0, top: 7.5, type: 'window', extSide: -1 },    // NW Bed West W
+            { start: 16.75, end: 18.75, sill: 5.5, top: 7.5, type: 'ventilator', extSide: -1 }, // Left Toilet V
+            { start: 21.50, end: 23.50, sill: 3.6, top: 5.2, type: 'ventilator', extSide: -1 }, // Under-Stair Toilet V
+            { start: 28.50, end: 31.50, sill: 3.2, top: 7.7, type: 'window', extSide: -1 },   // Stairwell W2
+            { start: 37.00, end: 42.00, sill: 3.0, top: 7.5, type: 'window', extSide: -1 }    // Living Room West W
+          ]
+        });
+
+        // 3. East Exterior Wall — North & Kitchen Section (X: 26.917..27.667, Z: 0.75..32.5)
+        addWallWithOpenings(houseGroup, collidersGF, {
+          axis: 'Z', start: 0.75, end: 32.5, wMin: 26.917, wMax: PLAN_W, floorY: gfY, height: H,
+          skirtingSides: [-1],
+          openings: [
+            { start: 5.25, end: 10.25, sill: 3.0, top: 7.5, type: 'window', extSide: 1 },     // NE Bed East W
+            { start: 16.75, end: 18.75, sill: 5.5, top: 7.5, type: 'ventilator', extSide: 1 },// Right Toilet V
+            { start: 21.50, end: 24.00, sill: 0, top: 7.0, type: 'door', swingSide: -1, hingeAtEnd: false }, // Kitchen D2
+            { start: 25.50, end: 30.50, sill: 3.0, top: 7.5, type: 'window', extSide: 1 }     // Kitchen East W
+          ]
+        });
+
+        // 4. Bedroom Center Partition Wall (X: 13.583..14.083, Z: 0.75..14.75)
+        addWallWithOpenings(houseGroup, collidersGF, {
+          axis: 'Z', start: 0.75, end: 14.75, wMin: 13.583, wMax: 14.083, floorY: gfY, height: H,
+          skirtingSides: [-1, 1]
+        });
+
+        // 5. Bedrooms South Partition Wall (Z: 14.75..15.25, X: 0.75..26.917)
+        addWallWithOpenings(houseGroup, collidersGF, {
+          axis: 'X', start: 0.75, end: 26.917, wMin: 14.75, wMax: 15.25, floorY: gfY, height: H,
+          skirtingSides: [-1, 1],
+          openings: [
+            { start: 4.50, end: 7.00, sill: 0, top: 7.0, type: 'door', swingSide: 1, hingeAtEnd: false },  // Left Toilet D2
+            { start: 9.80, end: 13.05, sill: 0, top: 7.0, type: 'door', swingSide: -1, hingeAtEnd: true }, // NW Bed D1
+            { start: 14.60, end: 17.85, sill: 0, top: 7.0, type: 'door', swingSide: -1, hingeAtEnd: false },// NE Bed D1
+            { start: 20.50, end: 23.00, sill: 0, top: 7.0, type: 'door', swingSide: 1, hingeAtEnd: true }  // Right Toilet D2
+          ]
+        });
+
+        // 6. Left Toilet East & South Walls
+        addWallWithOpenings(houseGroup, collidersGF, {
+          axis: 'Z', start: 15.25, end: 20.25, wMin: 9.0, wMax: 9.458, floorY: gfY, height: H,
+          skirtingSides: [-1, 1]
+        });
+        addWallWithOpenings(houseGroup, collidersGF, {
+          axis: 'X', start: 0.75, end: 9.458, wMin: 20.25, wMax: 20.75, floorY: gfY, height: H,
+          skirtingSides: [-1, 1]
+        });
+
+        // 7. Right Toilet West & South Walls
+        addWallWithOpenings(houseGroup, collidersGF, {
+          axis: 'Z', start: 15.25, end: 20.25, wMin: 18.458, wMax: 18.917, floorY: gfY, height: H,
+          skirtingSides: [-1, 1]
+        });
+        addWallWithOpenings(houseGroup, collidersGF, {
+          axis: 'X', start: 18.458, end: 26.917, wMin: 20.25, wMax: 20.75, floorY: gfY, height: H,
+          skirtingSides: [-1, 1]
+        });
+
+        // 8. Kitchen / Living Divider Wall + Kitchen South Exterior Wall (Z: 31.75..32.5, X: 0.75..26.917)
+        addWallWithOpenings(houseGroup, collidersGF, {
+          axis: 'X', start: 0.75, end: 26.917, wMin: 31.75, wMax: 32.5, floorY: gfY, height: H,
+          skirtingSides: [-1, 1],
+          openings: [
+            { start: 10.25, end: 14.75, sill: 0, top: archH, type: 'arch' },                  // Wide Living-to-Hall Archway
+            { start: 21.50, end: 26.00, sill: 3.5, top: 7.5, type: 'window', extSide: 1 }     // Kitchen South W1
+          ]
+        });
+
+        // 9. Living Room East Wall (facing Right Verandah, X: 20.0..20.75, Z: 32.5..46.5)
+        addWallWithOpenings(houseGroup, collidersGF, {
+          axis: 'Z', start: 32.5, end: 46.5, wMin: 20.0, wMax: 20.75, floorY: gfY, height: H,
+          skirtingSides: [-1],
+          openings: [
+            { start: 34.50, end: 39.50, sill: 3.0, top: 7.5, type: 'window', extSide: 0 },    // Living East W (under Verandah)
+            { start: 41.50, end: 45.25, sill: 0, top: 7.5, type: 'door', swingSide: -1, hingeAtEnd: true } // Main Door D
+          ]
+        });
+
+        // 10. Living Room South Wall (facing Front Verandah, Z: 46.5..47.25, X: 0.75..20.75)
+        addWallWithOpenings(houseGroup, collidersGF, {
+          axis: 'X', start: 0.75, end: 20.75, wMin: 46.5, wMax: 47.25, floorY: gfY, height: H,
+          skirtingSides: [-1],
+          openings: [
+            { start: 3.00, end: 8.00, sill: 3.0, top: 7.5, type: 'window', extSide: 0 },      // Front W left
+            { start: 12.00, end: 17.00, sill: 3.0, top: 7.5, type: 'window', extSide: 0 }     // Front W right
+          ]
+        });
+
+        // ---------------------------------------------------------------------
+        // C. GROUND FLOOR FALSE CEILINGS, LAMPS, FANS & SPLIT ACs
+        // ---------------------------------------------------------------------
+        // Living Room
+        const gfLivC = addFalseCeiling(houseGroup, 0.75, 20.0, 32.5, 46.5, gfY, H, 1.5);
+        [4.0, 10.375, 16.75].forEach((lx) => {
+          addSquareLamp(houseGroup, lx, 33.25, gfLivC.dropY);
+          addSquareLamp(houseGroup, lx, 45.75, gfLivC.dropY);
+        });
+        addCeilingFan(houseGroup, 6.25, 39.5, gfLivC.trayY);
+        addCeilingFan(houseGroup, 14.50, 39.5, gfLivC.trayY);
+        addSplitAC(houseGroup, 5.5, 32.5, gfY, H, 'S');
+        addRoomLight(houseGroup, 10.4, 39.5, gfLivC.trayY - 0.6, 0.85, 30);
+
+        // GF Kitchen + Corridor
+        const gfKitC = addFalseCeiling(houseGroup, 14.5, 26.917, 20.75, 31.75, gfY, H, 1.4);
+        [16.8, 24.6].forEach((lx) => {
+          addSquareLamp(houseGroup, lx, 21.45, gfKitC.dropY);
+          addSquareLamp(houseGroup, lx, 31.05, gfKitC.dropY);
+        });
+        addCeilingFan(houseGroup, 20.7, 26.25, gfKitC.trayY);
+        addRoomLight(houseGroup, 20.2, 26.25, gfKitC.trayY - 0.6, 0.68, 24);
+
+        // Corridor flush ceiling + 2 square lamps
+        addBox(houseGroup, 10.25, 14.5, gfY + H - 0.54, gfY + H, 20.75, 31.75, MAT.ceilingDrop, null);
+        addSquareLamp(houseGroup, 12.375, 23.5, gfY + H - 0.54);
+        addSquareLamp(houseGroup, 12.375, 29.0, gfY + H - 0.54);
+
+        // GF Central Lobby
+        const gfLobC = addFalseCeiling(houseGroup, 9.458, 18.458, 15.25, 20.75, gfY, H, 0.9);
+        addSquareLamp(houseGroup, 11.7, 17.75, gfLobC.trayY);
+        addSquareLamp(houseGroup, 16.2, 17.75, gfLobC.trayY);
+
+        // GF NW Bedroom
+        const gfNW = addFalseCeiling(houseGroup, 0.75, 13.583, 0.75, 14.75, gfY, H, 1.5);
+        [3.3, 11.0].forEach((lx) => {
+          addSquareLamp(houseGroup, lx, 1.5, gfNW.dropY);
+          addSquareLamp(houseGroup, lx, 14.0, gfNW.dropY);
+        });
+        addCeilingFan(houseGroup, 7.167, 7.75, gfNW.trayY);
+        addSplitAC(houseGroup, 13.583, 7.75, gfY, H, 'W');
+        addRoomLight(houseGroup, 7.2, 7.75, gfNW.trayY - 0.6, 0.70, 24);
+
+        // GF NE Bedroom
+        const gfNE = addFalseCeiling(houseGroup, 14.083, 26.917, 0.75, 14.75, gfY, H, 1.5);
+        [16.6, 24.3].forEach((lx) => {
+          addSquareLamp(houseGroup, lx, 1.5, gfNE.dropY);
+          addSquareLamp(houseGroup, lx, 14.0, gfNE.dropY);
+        });
+        addCeilingFan(houseGroup, 20.5, 7.75, gfNE.trayY);
+        addSplitAC(houseGroup, 14.083, 7.75, gfY, H, 'E');
+        addRoomLight(houseGroup, 20.5, 7.75, gfNE.trayY - 0.6, 0.70, 24);
+
+        // GF Toilets ceilings + 2 square lamps each
+        const tCeilGF = gfY + H - 0.35;
+        addBox(houseGroup, 0.75, 9.0, tCeilGF, gfY + H, 15.25, 20.25, MAT.ceilingGypsum, null);
+        addSquareLamp(houseGroup, 3.0, 17.75, tCeilGF);
+        addSquareLamp(houseGroup, 6.7, 17.75, tCeilGF);
+
+        addBox(houseGroup, 18.917, 26.917, tCeilGF, gfY + H, 15.25, 20.25, MAT.ceilingGypsum, null);
+        addSquareLamp(houseGroup, 21.1, 17.75, tCeilGF);
+        addSquareLamp(houseGroup, 24.7, 17.75, tCeilGF);
+
+        // Verandah Porch Square Ceiling Lamps
+        [4.0, 10.5, 17.0].forEach((vx) => addSquareLamp(houseGroup, vx, 50.0, gfY + H));
+        [38.0, 46.0].forEach((vz) => addSquareLamp(houseGroup, 24.2, vz, gfY + H));
+
+        // ---------------------------------------------------------------------
+        // D. INTERMEDIATE RCC SLAB (GF Ceiling / FF Floor — with exact Stairwell Cutout)
+        // ---------------------------------------------------------------------
+        // Non-overlapping structural slab segments leaving exact hole at X: 0.75..10.25, Z: 20.75..31.75
+        addBox(houseGroup, 0, PLAN_W, gfY + H, ffY - 0.04, 0, 20.75, MAT.concreteSlab, null);
+        addBox(houseGroup, 0, 0.75, gfY + H, ffY - 0.04, 20.75, 31.75, MAT.concreteSlab, null);
+        addBox(houseGroup, 10.25, PLAN_W, gfY + H, ffY - 0.04, 20.75, 31.75, MAT.concreteSlab, null);
+        addBox(houseGroup, 0, PLAN_W, gfY + H, ffY - 0.04, 31.75, PLAN_L, MAT.concreteSlab, null);
+
+        // Subtle exterior cornice lip around Verandah roof edge
+        addBox(houseGroup, 0, PLAN_W, ffY - 0.04, ffY + 0.5, 52.5, 53.0, MAT.exteriorWall, null);
+        addBox(houseGroup, 27.17, PLAN_W, ffY - 0.04, ffY + 0.5, 32.5, 52.5, MAT.exteriorWall, null);
+
+        // ---------------------------------------------------------------------
+        // E. U-SHAPED CONCRETE STAIRCASE, UNDER-STAIR TOILET, STORE & FF RAILING
+        // ---------------------------------------------------------------------
+        buildStaircaseAndUnderStair(houseGroup, gfY, H);
+
+        // ---------------------------------------------------------------------
+        // F. FIRST FLOOR TILED FLOORS (Non-Overlapping)
+        // ---------------------------------------------------------------------
+        // White vitrified indoor tiles
+        addTiledFloor(houseGroup, 0.75, 13.583, 0.75, 14.75, ffY, 0.04, true);    // FF NW Bedroom
+        addTiledFloor(houseGroup, 14.083, 26.917, 0.75, 14.75, ffY, 0.04, true);  // FF NE Bedroom
+        addTiledFloor(houseGroup, 9.458, 18.458, 14.75, 20.75, ffY, 0.04, true);  // FF Central Lobby
+        addTiledFloor(houseGroup, 10.25, 26.917, 20.75, 32.5, ffY, 0.04, true);   // FF Corridor & Family Seating
+
+        // Matte anti-skid tiles (FF Toilets & Open Terrace)
+        addTiledFloor(houseGroup, 0.75, 9.0, 14.75, 20.25, ffY, 0.04, false);     // FF Left Toilet
+        addTiledFloor(houseGroup, 18.917, 26.917, 14.75, 20.25, ffY, 0.04, false);// FF Right Toilet
+        addTiledFloor(houseGroup, 0.75, 20.0, 32.5, 46.25, ffY, 0.04, false);     // FF Open Terrace (20'-9" x 14'-6")
+
+        // Finished flat slab roof over GF L-Shaped Verandah (visible outside Terrace parapet)
+        addBox(houseGroup, 0, PLAN_W, ffY - 0.04, ffY, 47.0, 52.5, MAT.concreteSlab, null);
+        addBox(houseGroup, 20.75, 27.17, ffY - 0.04, ffY, 32.5, 47.0, MAT.concreteSlab, null);
+
+        // ---------------------------------------------------------------------
+        // G. FIRST FLOOR WALLS & OPEN TERRACE PARAPET
+        // ---------------------------------------------------------------------
+        // 1. FF North Exterior Wall (Z: 0.0..0.75, X: 0..27.667)
+        addWallWithOpenings(houseGroup, collidersFF, {
+          axis: 'X', start: 0, end: PLAN_W, wMin: 0, wMax: 0.75, floorY: ffY, height: H,
+          skirtingSides: [1],
+          openings: [
+            { start: 4.667, end: 9.667, sill: 3.0, top: 7.5, type: 'window', extSide: -1 },
+            { start: 18.0, end: 23.0, sill: 3.0, top: 7.5, type: 'window', extSide: -1 }
+          ]
+        });
+
+        // 2. FF West Exterior Wall (X: 0.0..0.75, Z: 0.75..32.5)
+        addWallWithOpenings(houseGroup, collidersFF, {
+          axis: 'Z', start: 0.75, end: 32.5, wMin: 0, wMax: 0.75, floorY: ffY, height: H,
+          skirtingSides: [1],
+          openings: [
+            { start: 5.25, end: 10.25, sill: 3.0, top: 7.5, type: 'window', extSide: -1 },    // FF NW Bed W
+            { start: 16.75, end: 18.75, sill: 5.5, top: 7.5, type: 'ventilator', extSide: -1 },// FF Left Toilet V
+            { start: 22.00, end: 25.00, sill: 3.0, top: 7.5, type: 'window', extSide: -1 },   // FF Stairwell W2 North
+            { start: 27.50, end: 30.50, sill: 3.0, top: 7.5, type: 'window', extSide: -1 }    // FF Stairwell W2 South
+          ]
+        });
+
+        // 3. FF East Exterior Wall (X: 26.917..27.667, Z: 0.75..32.5)
+        addWallWithOpenings(houseGroup, collidersFF, {
+          axis: 'Z', start: 0.75, end: 32.5, wMin: 26.917, wMax: PLAN_W, floorY: ffY, height: H,
+          skirtingSides: [-1],
+          openings: [
+            { start: 5.25, end: 10.25, sill: 3.0, top: 7.5, type: 'window', extSide: 1 },     // FF NE Bed W
+            { start: 16.75, end: 18.75, sill: 5.5, top: 7.5, type: 'ventilator', extSide: 1 },// FF Right Toilet V
+            { start: 23.75, end: 28.75, sill: 3.0, top: 7.5, type: 'window', extSide: 1 }     // FF Family Seating East W
+          ]
+        });
+
+        // 4. FF Bedroom Center Partition Wall (X: 13.583..14.083, Z: 0.75..14.75)
+        addWallWithOpenings(houseGroup, collidersFF, {
+          axis: 'Z', start: 0.75, end: 14.75, wMin: 13.583, wMax: 14.083, floorY: ffY, height: H,
+          skirtingSides: [-1, 1]
+        });
+
+        // 5. FF Bedrooms South Partition Wall (Z: 14.75..15.25, X: 0.75..26.917)
+        addWallWithOpenings(houseGroup, collidersFF, {
+          axis: 'X', start: 0.75, end: 26.917, wMin: 14.75, wMax: 15.25, floorY: ffY, height: H,
+          skirtingSides: [-1, 1],
+          openings: [
+            { start: 4.50, end: 7.00, sill: 0, top: 7.0, type: 'door', swingSide: 1, hingeAtEnd: false },
+            { start: 9.80, end: 13.05, sill: 0, top: 7.0, type: 'door', swingSide: -1, hingeAtEnd: true },
+            { start: 14.60, end: 17.85, sill: 0, top: 7.0, type: 'door', swingSide: -1, hingeAtEnd: false },
+            { start: 20.50, end: 23.00, sill: 0, top: 7.0, type: 'door', swingSide: 1, hingeAtEnd: true }
+          ]
+        });
+
+        // 6. FF Left & Right Toilet Enclosures
+        addWallWithOpenings(houseGroup, collidersFF, {
+          axis: 'Z', start: 15.25, end: 20.25, wMin: 9.0, wMax: 9.458, floorY: ffY, height: H,
+          skirtingSides: [-1, 1]
+        });
+        addWallWithOpenings(houseGroup, collidersFF, {
+          axis: 'X', start: 0.75, end: 9.458, wMin: 20.25, wMax: 20.75, floorY: ffY, height: H,
+          skirtingSides: [-1, 1]
+        });
+        addWallWithOpenings(houseGroup, collidersFF, {
+          axis: 'Z', start: 15.25, end: 20.25, wMin: 18.458, wMax: 18.917, floorY: ffY, height: H,
+          skirtingSides: [-1, 1]
+        });
+        addWallWithOpenings(houseGroup, collidersFF, {
+          axis: 'X', start: 18.458, end: 26.917, wMin: 20.25, wMax: 20.75, floorY: ffY, height: H,
+          skirtingSides: [-1, 1]
+        });
+
+        // 7. FF South Exterior Wall (separating Stairwell & Family Seating from Open Terrace, Z: 31.75..32.5)
+        addWallWithOpenings(houseGroup, collidersFF, {
+          axis: 'X', start: 0.75, end: 26.917, wMin: 31.75, wMax: 32.5, floorY: ffY, height: H,
+          skirtingSides: [-1],
+          openings: [
+            { start: 14.50, end: 18.00, sill: 0, top: 7.0, type: 'door', swingSide: -1, hingeAtEnd: false }, // Terrace Door D1
+            { start: 21.50, end: 26.00, sill: 3.5, top: 7.5, type: 'window', extSide: 1 }                    // Family Seating W1
+          ]
+        });
+
+        // 8. FF Open Terrace 3'-6" Parapet Walls (9" thick) + Coping Cap
+        const paraH = 3.5;
+        addBox(houseGroup, 0.0, 0.75, ffY, ffY + paraH, 32.5, 47.0, MAT.exteriorWall, collidersFF);          // West parapet
+        addBox(houseGroup, 0.75, 20.75, ffY, ffY + paraH, 46.25, 47.0, MAT.exteriorWall, collidersFF);       // South parapet
+        addBox(houseGroup, 20.0, 20.75, ffY, ffY + paraH, 32.5, 46.25, MAT.exteriorWall, collidersFF);       // East parapet
+        // Clean architectural coping stone cap along parapet top
+        addBox(houseGroup, -0.05, 0.80, ffY + paraH, ffY + paraH + 0.14, 32.5, 47.05, MAT.concreteSlab, null);
+        addBox(houseGroup, 0.80, 20.80, ffY + paraH, ffY + paraH + 0.14, 46.20, 47.05, MAT.concreteSlab, null);
+        addBox(houseGroup, 19.95, 20.80, ffY + paraH, ffY + paraH + 0.14, 32.5, 46.20, MAT.concreteSlab, null);
+
+        // ---------------------------------------------------------------------
+        // H. FIRST FLOOR FALSE CEILINGS, LAMPS, FANS, SPLIT ACs & ROOF SLAB
+        // ---------------------------------------------------------------------
+        // FF Family Seating
+        const ffFamC = addFalseCeiling(houseGroup, 14.5, 26.917, 20.75, 31.75, ffY, H, 1.4);
+        [16.8, 24.6].forEach((lx) => {
+          addSquareLamp(houseGroup, lx, 21.45, ffFamC.dropY);
+          addSquareLamp(houseGroup, lx, 31.05, ffFamC.dropY);
+        });
+        addCeilingFan(houseGroup, 20.7, 26.25, ffFamC.trayY);
+        addSplitAC(houseGroup, 22.7, 20.75, ffY, H, 'S');
+        addRoomLight(houseGroup, 20.2, 26.25, ffFamC.trayY - 0.6, 0.72, 26);
+
+        // FF Corridor flush ceiling + 2 square lamps
+        addBox(houseGroup, 10.25, 14.5, ffY + H - 0.54, ffY + H, 20.75, 31.75, MAT.ceilingDrop, null);
+        addSquareLamp(houseGroup, 12.375, 23.5, ffY + H - 0.54);
+        addSquareLamp(houseGroup, 12.375, 29.0, ffY + H - 0.54);
+
+        // FF Stairwell Overhead Ceiling + 2 square lamps + Soft Stairwell Light
+        addBox(houseGroup, 0.75, 10.25, ffY + H - 0.15, ffY + H, 20.75, 31.75, MAT.ceilingGypsum, null);
+        addSquareLamp(houseGroup, 3.0, 26.25, ffY + H - 0.15);
+        addSquareLamp(houseGroup, 7.5, 26.25, ffY + H - 0.15);
+        addRoomLight(houseGroup, 5.5, 26.25, ffY + H - 1.2, 0.55, 28);
+
+        // FF Central Lobby
+        const ffLobC = addFalseCeiling(houseGroup, 9.458, 18.458, 15.25, 20.75, ffY, H, 0.9);
+        addSquareLamp(houseGroup, 11.7, 17.75, ffLobC.trayY);
+        addSquareLamp(houseGroup, 16.2, 17.75, ffLobC.trayY);
+
+        // FF NW Bedroom
+        const ffNW = addFalseCeiling(houseGroup, 0.75, 13.583, 0.75, 14.75, ffY, H, 1.5);
+        [3.3, 11.0].forEach((lx) => {
+          addSquareLamp(houseGroup, lx, 1.5, ffNW.dropY);
+          addSquareLamp(houseGroup, lx, 14.0, ffNW.dropY);
+        });
+        addCeilingFan(houseGroup, 7.167, 7.75, ffNW.trayY);
+        addSplitAC(houseGroup, 13.583, 7.75, ffY, H, 'W');
+        addRoomLight(houseGroup, 7.2, 7.75, ffNW.trayY - 0.6, 0.70, 24);
+
+        // FF NE Bedroom
+        const ffNE = addFalseCeiling(houseGroup, 14.083, 26.917, 0.75, 14.75, ffY, H, 1.5);
+        [16.6, 24.3].forEach((lx) => {
+          addSquareLamp(houseGroup, lx, 1.5, ffNE.dropY);
+          addSquareLamp(houseGroup, lx, 14.0, ffNE.dropY);
+        });
+        addCeilingFan(houseGroup, 20.5, 7.75, ffNE.trayY);
+        addSplitAC(houseGroup, 14.083, 7.75, ffY, H, 'E');
+        addRoomLight(houseGroup, 20.5, 7.75, ffNE.trayY - 0.6, 0.70, 24);
+
+        // FF Toilets ceilings + 2 square lamps each
+        const tCeilFF = ffY + H - 0.35;
+        addBox(houseGroup, 0.75, 9.0, tCeilFF, ffY + H, 15.25, 20.25, MAT.ceilingGypsum, null);
+        addSquareLamp(houseGroup, 3.0, 17.75, tCeilFF);
+        addSquareLamp(houseGroup, 6.7, 17.75, tCeilFF);
+
+        addBox(houseGroup, 18.917, 26.917, tCeilFF, ffY + H, 15.25, 20.25, MAT.ceilingGypsum, null);
+        addSquareLamp(houseGroup, 21.1, 17.75, tCeilFF);
+        addSquareLamp(houseGroup, 24.7, 17.75, tCeilFF);
+
+        // FF Main Roof Slab (covers all FF indoor zones Z: 0..32.5, leaving Terrace open to the sky!)
+        addBox(houseGroup, -0.35, PLAN_W + 0.35, roofY, roofY + 0.55, -0.35, 33.1, MAT.exteriorWall, null);
+        // Subtle top roof parapet fascia along South roof edge (looks crisp when viewed from Open Terrace)
+        addBox(houseGroup, -0.35, PLAN_W + 0.35, roofY + 0.55, roofY + 2.2, 32.4, 33.1, MAT.exteriorWall, null);
+
+        scene.add(houseGroup);
+      }
+
+      // =========================================================================
+      // 9. PLAYER STATE, ROOM TELEPORT PRESETS & COLLISION ENGINE
+      // =========================================================================
+      const player = {
+        x: 18.2,           // Start inside GF Living Room near Main Entrance
+        z: 43.2,
+        floorY: getGFY(),
+        mode: 'GF',        // 'GF' | 'STAIRS' | 'FF'
+        currentFloor: 0,   // 0 = Ground Floor, 1 = First Floor
+        yaw: 0.88,         // Looking NW across spacious Living Room toward archway & windows
+        pitch: -0.02
+      };
+
+      const ROOM_PRESETS = {
+        gf_living:       { x: 18.2, z: 43.2, mode: 'GF', yaw: 0.88,  pitch: -0.02, label: 'GF — Living Room' },
+        gf_verandah:     { x: 24.0, z: 49.0, mode: 'GF', yaw: 0.58,  pitch: 0.02,  label: 'GF — L-Shaped Verandah' },
+        gf_kitchen:      { x: 20.5, z: 26.5, mode: 'GF', yaw: 1.25,  pitch: -0.02, label: 'GF — Kitchen' },
+        gf_lobby:        { x: 13.9, z: 18.0, mode: 'GF', yaw: 0.0,   pitch: -0.02, label: 'GF — Central Lobby' },
+        gf_bed_nw:       { x: 10.5, z: 12.2, mode: 'GF', yaw: 0.72,  pitch: -0.02, label: 'GF — NW Bedroom' },
+        gf_bed_ne:       { x: 17.2, z: 12.2, mode: 'GF', yaw: -0.72, pitch: -0.02, label: 'GF — NE Bedroom' },
+        gf_toilet_l:     { x: 5.5,  z: 17.7, mode: 'GF', yaw: 1.57,  pitch: -0.04, label: 'GF — Left Toilet' },
+        gf_toilet_r:     { x: 22.0, z: 17.7, mode: 'GF', yaw: -1.57, pitch: -0.04, label: 'GF — Right Toilet' },
+        gf_toilet_stair: { x: 7.4,  z: 22.5, mode: 'GF', yaw: 1.57,  pitch: -0.04, label: 'GF — Under-Stair Toilet' },
+        gf_stair_bot:    { x: 11.8, z: 30.0, mode: 'GF', yaw: 1.57,  pitch: 0.08,  label: 'GF — Staircase Entry' },
+
+        ff_family:       { x: 21.0, z: 26.5, mode: 'FF', yaw: 1.15,  pitch: -0.02, label: 'FF — Family Seating' },
+        ff_terrace:      { x: 10.5, z: 41.5, mode: 'FF', yaw: -0.15, pitch: 0.04,  label: 'FF — Open Terrace' },
+        ff_lobby:        { x: 13.9, z: 18.0, mode: 'FF', yaw: 3.14,  pitch: -0.02, label: 'FF — Central Lobby' },
+        ff_bed_nw:       { x: 10.5, z: 12.2, mode: 'FF', yaw: 0.72,  pitch: -0.02, label: 'FF — NW Bedroom' },
+        ff_bed_ne:       { x: 17.2, z: 12.2, mode: 'FF', yaw: -0.72, pitch: -0.02, label: 'FF — NE Bedroom' },
+        ff_toilet_l:     { x: 5.5,  z: 17.7, mode: 'FF', yaw: 1.57,  pitch: -0.04, label: 'FF — Left Toilet' },
+        ff_toilet_r:     { x: 22.0, z: 17.7, mode: 'FF', yaw: -1.57, pitch: -0.04, label: 'FF — Right Toilet' },
+        ff_stair_top:    { x: 11.8, z: 22.5, mode: 'FF', yaw: 1.57,  pitch: -0.15, label: 'FF — Staircase Top' }
+      };
+
+      function teleportTo(preset) {
+        player.x = preset.x;
+        player.z = preset.z;
+        player.mode = preset.mode;
+        player.currentFloor = preset.mode === 'FF' ? 1 : 0;
+        player.floorY = preset.mode === 'FF' ? getFFY() : getGFY();
+        if (typeof preset.yaw === 'number') player.yaw = preset.yaw;
+        if (typeof preset.pitch === 'number') player.pitch = preset.pitch;
+        syncCameraToPlayer();
+        updateFloorButtons();
+        updateRoomHUD();
+      }
+
+      // Circle vs AABB collision resolution (allows smooth wall sliding)
+      function resolveCircleAABB(px, pz, r, box) {
+        const closestX = Math.max(box.minX, Math.min(px, box.maxX));
+        const closestZ = Math.max(box.minZ, Math.min(pz, box.maxZ));
+        const dx = px - closestX;
+        const dz = pz - closestZ;
+        const distSq = dx * dx + dz * dz;
+
+        if (distSq < r * r) {
+          const dist = Math.sqrt(distSq);
+          if (dist > 0.0001) {
+            const overlap = r - dist;
+            return { x: px + (dx / dist) * overlap, z: pz + (dz / dist) * overlap };
+          } else {
+            // Inside box fallback: push out nearest edge
+            const dLeft = Math.abs(px - box.minX);
+            const dRight = Math.abs(box.maxX - px);
+            const dTop = Math.abs(pz - box.minZ);
+            const dBot = Math.abs(box.maxZ - pz);
+            const m = Math.min(dLeft, dRight, dTop, dBot);
+            if (m === dLeft) return { x: box.minX - r, z: pz };
+            if (m === dRight) return { x: box.maxX + r, z: pz };
+            if (m === dTop) return { x: px, z: box.minZ - r };
+            return { x: px, z: box.maxZ + r };
+          }
+        }
+        return { x: px, z: pz };
+      }
+
+      // Update player position with solid collisions + continuous U-shaped stair walking
+      function movePlayer(dx, dz) {
+        let nx = player.x + dx;
+        let nz = player.z + dz;
+
+        // Mode transitions onto / off the U-shaped staircase
+        if (player.mode === 'GF') {
+          // Entering Flight 1 from GF corridor (X crossing 10.25 while Z in 28.35..31.65)
+          if (nx < 10.25 && player.x >= 9.8 && nz >= 28.35 && nz <= 31.65) {
+            player.mode = 'STAIRS';
+          }
+        } else if (player.mode === 'FF') {
+          // Entering Flight 3 downward from FF corridor (X crossing 10.25 while Z in 20.85..24.15)
+          if (nx < 10.25 && player.x >= 9.8 && nz >= 20.85 && nz <= 24.15) {
+            player.mode = 'STAIRS';
+          }
+        } else if (player.mode === 'STAIRS') {
+          // Exiting Bottom of Flight 1 onto GF
+          if (nx > 10.30 && nz >= 28.25 && nz <= 31.75) {
+            player.mode = 'GF';
+            player.currentFloor = 0;
+            player.floorY = getGFY();
+            updateFloorButtons();
+          }
+          // Exiting Top of Flight 3 onto FF
+          else if (nx > 10.30 && nz >= 20.75 && nz <= 24.25) {
+            player.mode = 'FF';
+            player.currentFloor = 1;
+            player.floorY = getFFY();
+            updateFloorButtons();
+          }
+        }
+
+        // Apply active collision set
+        if (player.mode === 'STAIRS') {
+          // Outer stairwell walls
+          const stairColliders = [
+            { minX: 0.0, maxX: 0.75, minZ: 20.0, maxZ: 32.5 },     // West wall
+            { minX: 0.0, maxX: 10.5, minZ: 20.0, maxZ: 20.75 },    // North wall
+            { minX: 0.0, maxX: 10.5, minZ: 31.75, maxZ: 32.5 },    // South wall
+            { minX: 4.25, maxX: 10.5, minZ: 24.25, maxZ: 28.25 }   // Central inner stair well
+          ];
+          for (let pass = 0; pass < 2; pass++) {
+            for (const b of stairColliders) {
+              const res = resolveCircleAABB(nx, nz, PLAYER_RADIUS, b);
+              nx = res.x;
+              nz = res.z;
+            }
+          }
+          player.x = nx;
+          player.z = nz;
+          player.floorY = getStairElevation(nx, nz);
+
+          // Automatically update active floor badge midway up/down the stairs
+          const midY = getGFY() + getFloorToFloor() * 0.5;
+          const newFloor = player.floorY >= midY ? 1 : 0;
+          if (newFloor !== player.currentFloor) {
+            player.currentFloor = newFloor;
+            updateFloorButtons();
+          }
+        } else {
+          const activeColliders = player.mode === 'FF' ? collidersFF : collidersGF;
+          for (let pass = 0; pass < 2; pass++) {
+            for (const b of activeColliders) {
+              const res = resolveCircleAABB(nx, nz, PLAYER_RADIUS, b);
+              nx = res.x;
+              nz = res.z;
+            }
+          }
+          player.x = nx;
+          player.z = nz;
+          player.floorY = player.mode === 'FF' ? getFFY() : getGFY();
+        }
+      }
+
+      function syncCameraToPlayer() {
+        camera.position.set(
+          player.x * FT,
+          (player.floorY + EYE_HEIGHT) * FT,
+          player.z * FT
+        );
+        camera.rotation.y = player.yaw;
+        camera.rotation.x = player.pitch;
+      }
+
+      // Detect exact room name for HUD readout
+      function detectCurrentRoom() {
+        const x = player.x;
+        const z = player.z;
+        if (player.mode === 'STAIRS') {
+          const pct = Math.round(((player.floorY - getGFY()) / getFloorToFloor()) * 100);
+          return `Staircase (${pct}% Elevation)`;
+        }
+        const fl = player.currentFloor === 1 ? 'FF' : 'GF';
+        if (z < 15.0) {
+          return x < 13.83 ? `${fl} — NW Bedroom (12'-10" × 14'-0")` : `${fl} — NE Bedroom (12'-10" × 14'-0")`;
+        }
+        if (z < 20.5) {
+          if (x < 9.25) return `${fl} — Left Toilet (8'-3" × 5'-0")`;
+          if (x > 18.7) return `${fl} — Right Toilet (8'-0" × 5'-0")`;
+          return `${fl} — Central Lobby (9'-0" × 4'-9")`;
+        }
+        if (z < 32.1) {
+          if (player.currentFloor === 0 && x < 10.1) {
+            if (z < 24.4) return `GF — Under-Stair Toilet`;
+            if (x < 4.5 && z < 28.2) return `GF — Store Room`;
+            return `GF — Staircase Hall`;
+          }
+          if (x >= 14.5) {
+            return player.currentFloor === 0 ? `GF — Kitchen (12'-5" × 11'-0")` : `FF — Family Seating (12'-5" × 11'-0")`;
+          }
+          return `${fl} — Central Passage`;
+        }
+        if (player.currentFloor === 1) {
+          return `FF — Open Terrace (20'-9" × 14'-6")`;
+        }
+        if (x < 20.4 && z < 46.9) {
+          return `GF — Living Room (19'-3" × 14'-0")`;
+        }
+        return `GF — L-Shaped Verandah`;
+      }
+
+      const roomLabelEl = document.getElementById('current-room-label');
+      let lastRoomText = '';
+      function updateRoomHUD() {
+        const text = detectCurrentRoom();
+        if (text !== lastRoomText) {
+          lastRoomText = text;
+          roomLabelEl.textContent = text;
+        }
+      }
+
+      // =========================================================================
+      // 10. INTERACTIVE 2D BLUEPRINT MINI-MAP (HTML5 Canvas)
+      // =========================================================================
+      const mapCanvas = document.getElementById('minimap-canvas');
+      const mapCtx = mapCanvas.getContext('2d');
+      const mapTitleEl = document.getElementById('minimap-title');
+      const MAP_SCALE = 6.0; // 27.667 * 6 = 166px, 53.0 * 6 = 318px
+
+      function drawMinimap() {
+        const ctx = mapCtx;
+        const isFF = player.currentFloor === 1;
+        mapTitleEl.textContent = isFF ? 'First Floor Plan' : 'Ground Floor Plan';
+
+        ctx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(0, 0, mapCanvas.width, mapCanvas.height);
+
+        const r = (x, z, w, h, fill, stroke) => {
+          if (fill) {
+            ctx.fillStyle = fill;
+            ctx.fillRect(x * MAP_SCALE, z * MAP_SCALE, w * MAP_SCALE, h * MAP_SCALE);
+          }
+          if (stroke) {
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = 1.2;
+            ctx.strokeRect(x * MAP_SCALE, z * MAP_SCALE, w * MAP_SCALE, h * MAP_SCALE);
+          }
+        };
+
+        const lbl = (text, x, z, size) => {
+          ctx.fillStyle = '#334155';
+          ctx.font = `600 ${size || 8}px Inter, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(text, x * MAP_SCALE, z * MAP_SCALE);
+        };
+
+        // Bedrooms (identical on GF & FF)
+        r(0.75, 0.75, 12.83, 14.0, '#ffffff', '#1e293b');
+        r(14.08, 0.75, 12.84, 14.0, '#ffffff', '#1e293b');
+        lbl('BEDROOM', 7.16, 7.2, 8);
+        lbl("12'10\"×14'", 7.16, 9.0, 6.8);
+        lbl('BEDROOM', 20.5, 7.2, 8);
+        lbl("12'10\"×14'", 20.5, 9.0, 6.8);
+
+        // Toilets & Lobby
+        r(0.75, 15.25, 8.25, 5.0, '#f1f5f9', '#1e293b');
+        r(9.46, 15.25, 9.0, 5.5, '#ffffff', '#94a3b8');
+        r(18.92, 15.25, 8.0, 5.0, '#f1f5f9', '#1e293b');
+        lbl('TOILET', 4.88, 17.75, 7);
+        lbl('LOBBY', 13.96, 17.75, 7);
+        lbl('TOILET', 22.92, 17.75, 7);
+
+        // Stairwell
+        r(0.75, 20.75, 9.5, 11.0, isFF ? '#e2e8f0' : '#f1f5f9', '#334155');
+        // Draw stair tread lines
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 0.8;
+        for (let i = 0; i < 7; i++) {
+          const sx = (4.25 + (i / 7) * 6.0) * MAP_SCALE;
+          ctx.beginPath();
+          ctx.moveTo(sx, 28.25 * MAP_SCALE);
+          ctx.lineTo(sx, 31.75 * MAP_SCALE);
+          ctx.moveTo(sx, 20.75 * MAP_SCALE);
+          ctx.lineTo(sx, 24.25 * MAP_SCALE);
+          ctx.stroke();
+        }
+        for (let i = 0; i < 4; i++) {
+          const sz = (24.25 + (i / 4) * 4.0) * MAP_SCALE;
+          ctx.beginPath();
+          ctx.moveTo(0.75 * MAP_SCALE, sz);
+          ctx.lineTo(4.25 * MAP_SCALE, sz);
+          ctx.stroke();
+        }
+        lbl('STAIRS', 6.8, 26.25, 6.8);
+
+        // Kitchen (GF) / Family Seating (FF) + Corridor
+        r(10.25, 20.75, 16.67, 11.0, '#ffffff', '#1e293b');
+        lbl(isFF ? 'FAMILY' : 'KITCHEN', 20.5, 25.4, 8);
+        lbl(isFF ? 'SEATING' : "12'5\"×11'", 20.5, 27.2, 7.2);
+
+        if (!isFF) {
+          // Ground Floor: Living Room + L-Shaped Verandah
+          r(0.75, 32.5, 19.25, 14.0, '#ffffff', '#1e293b');
+          lbl('LIVING ROOM', 10.4, 38.8, 8.5);
+          lbl("19'3\"×14'0\"", 10.4, 40.7, 7);
+
+          // Verandah
+          r(0.0, 47.0, 20.75, 6.0, '#eef2f6', '#64748b');
+          r(20.75, 32.5, 6.92, 20.5, '#eef2f6', '#64748b');
+          lbl('VERANDAH', 10.4, 50.0, 7.5);
+          lbl('VER.', 24.2, 42.5, 7);
+        } else {
+          // First Floor: Open Terrace
+          r(0.75, 32.5, 19.25, 13.75, '#e0f2fe', '#0284c7');
+          lbl('OPEN TERRACE', 10.4, 38.8, 8.5);
+          lbl("20'9\"×14'6\"", 10.4, 40.7, 7);
+
+          // Verandah Roof Below (muted dashed outline)
+          ctx.strokeStyle = '#cbd5e1';
+          ctx.setLineDash([3, 3]);
+          ctx.strokeRect(20.75 * MAP_SCALE, 32.5 * MAP_SCALE, 6.92 * MAP_SCALE, 20.5 * MAP_SCALE);
+          ctx.strokeRect(0, 47.0 * MAP_SCALE, 20.75 * MAP_SCALE, 6.0 * MAP_SCALE);
+          ctx.setLineDash([]);
+        }
+
+        // Viewing Cone & Player Position Dot
+        const px = player.x * MAP_SCALE;
+        const pz = player.z * MAP_SCALE;
+        const lookAngle = Math.atan2(-Math.cos(player.yaw), -Math.sin(player.yaw)); // Canvas angle from +X
+        const coneSpan = 0.54;
+        const coneLen = 22;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(14, 165, 233, 0.28)';
+        ctx.beginPath();
+        ctx.moveTo(px, pz);
+        ctx.arc(px, pz, coneLen, lookAngle - coneSpan, lookAngle + coneSpan);
+        ctx.closePath();
+        ctx.fill();
+
+        // Crisp player marker
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.arc(px, pz, 4.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(px, pz, 2.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Click-to-teleport on Mini-Map
+      mapCanvas.addEventListener('click', (e) => {
+        const rect = mapCanvas.getBoundingClientRect();
+        const fx = ((e.clientX - rect.left) / rect.width) * PLAN_W;
+        const fz = ((e.clientY - rect.top) / rect.height) * PLAN_L;
+        const isFF = player.currentFloor === 1;
+
+        let targetKey = null;
+        if (fz < 15.0) {
+          targetKey = fx < 13.8 ? (isFF ? 'ff_bed_nw' : 'gf_bed_nw') : (isFF ? 'ff_bed_ne' : 'gf_bed_ne');
+        } else if (fz < 20.5) {
+          if (fx < 9.3) targetKey = isFF ? 'ff_toilet_l' : 'gf_toilet_l';
+          else if (fx > 18.6) targetKey = isFF ? 'ff_toilet_r' : 'gf_toilet_r';
+          else targetKey = isFF ? 'ff_lobby' : 'gf_lobby';
+        } else if (fz < 32.1) {
+          if (fx < 10.2) targetKey = isFF ? 'ff_stair_top' : (fz < 24.4 ? 'gf_toilet_stair' : 'gf_stair_bot');
+          else targetKey = isFF ? 'ff_family' : 'gf_kitchen';
+        } else {
+          if (isFF) {
+            if (fx <= 20.5 && fz <= 46.8) targetKey = 'ff_terrace';
+          } else {
+            if (fx <= 20.2 && fz <= 46.8) targetKey = 'gf_living';
+            else targetKey = 'gf_verandah';
+          }
+        }
+
+        if (targetKey && ROOM_PRESETS[targetKey]) {
+          teleportTo(ROOM_PRESETS[targetKey]);
+          showToast(`Moved to ${ROOM_PRESETS[targetKey].label}`);
+        }
+      });
+
+      // =========================================================================
+      // 11. INPUT CONTROLS (WASD, Arrows, Shift, Q/E, Mouse Drag, Pointer Lock, Touch)
+      // =========================================================================
+      const keys = {};
+      const touchDirs = { forward: false, backward: false, left: false, right: false };
+
+      window.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+        const code = e.code;
+        keys[code] = true;
+
+        if (code === 'KeyM') {
+          toggleMinimap();
+        }
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(code)) {
+          e.preventDefault();
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        keys[e.code] = false;
+      });
+
+      // Mouse Click-and-Drag Look + Pointer Lock FPS Look
+      let isDragging = false;
+      let lastMouseX = 0;
+      let lastMouseY = 0;
+
+      canvas.addEventListener('mousedown', (e) => {
+        if (isPointerLocked) return;
+        isDragging = true;
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+      });
+
+      window.addEventListener('mouseup', () => {
+        isDragging = false;
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (isPointerLocked) {
+          player.yaw -= e.movementX * 0.0024;
+          player.pitch -= e.movementY * 0.0022;
+          player.pitch = Math.max(-1.25, Math.min(1.25, player.pitch));
+        } else if (isDragging) {
+          const dx = e.clientX - lastMouseX;
+          const dy = e.clientY - lastMouseY;
+          lastMouseX = e.clientX;
+          lastMouseY = e.clientY;
+          player.yaw += dx * 0.0038;
+          player.pitch += dy * 0.0032;
+          player.pitch = Math.max(-1.25, Math.min(1.25, player.pitch));
+        }
+      });
+
+      // Touch Look on Canvas
+      let activeTouchId = null;
+      let lastTouchX = 0;
+      let lastTouchY = 0;
+
+      if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+        const dpad = document.getElementById('touch-dpad');
+        if (dpad) dpad.classList.remove('hidden');
+      }
+
+      canvas.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          activeTouchId = e.touches[0].identifier;
+          lastTouchX = e.touches[0].clientX;
+          lastTouchY = e.touches[0].clientY;
+        }
+      }, { passive: true });
+
+      canvas.addEventListener('touchmove', (e) => {
+        for (const t of e.touches) {
+          if (t.identifier === activeTouchId) {
+            const dx = t.clientX - lastTouchX;
+            const dy = t.clientY - lastTouchY;
+            lastTouchX = t.clientX;
+            lastTouchY = t.clientY;
+            player.yaw += dx * 0.0045;
+            player.pitch += dy * 0.0038;
+            player.pitch = Math.max(-1.25, Math.min(1.25, player.pitch));
+          }
+        }
+      }, { passive: true });
+
+      canvas.addEventListener('touchend', () => { activeTouchId = null; });
+
+      // Touch D-Pad Listeners
+      document.querySelectorAll('.touch-btn').forEach((btn) => {
+        const dir = btn.dataset.dir;
+        const onStart = (ev) => { ev.preventDefault(); touchDirs[dir] = true; };
+        const onEnd = (ev) => { ev.preventDefault(); touchDirs[dir] = false; };
+        btn.addEventListener('touchstart', onStart, { passive: false });
+        btn.addEventListener('touchend', onEnd, { passive: false });
+        btn.addEventListener('touchcancel', onEnd, { passive: false });
+        btn.addEventListener('mousedown', onStart);
+        btn.addEventListener('mouseup', onEnd);
+        btn.addEventListener('mouseleave', onEnd);
+      });
+
+      // Pointer Lock (FPS Look) Management
+      const btnFpsLock = document.getElementById('btn-fps-lock');
+      const fpsLockLabel = document.getElementById('fps-lock-label');
+      const crosshairEl = document.getElementById('fps-crosshair');
+
+      btnFpsLock.addEventListener('click', () => {
+        if (document.pointerLockElement === canvas) {
+          document.exitPointerLock();
+        } else if (canvas.requestPointerLock) {
+          try {
+            canvas.requestPointerLock();
+          } catch (err) {
+            showToast('Click and drag anywhere to look around');
+          }
+        }
+      });
+
+      document.addEventListener('pointerlockchange', () => {
+        isPointerLocked = document.pointerLockElement === canvas;
+        crosshairEl.style.display = isPointerLocked ? 'block' : 'none';
+        fpsLockLabel.textContent = isPointerLocked ? 'ESC to Unlock' : 'FPS Look';
+        btnFpsLock.classList.toggle('bg-slate-900', isPointerLocked);
+        btnFpsLock.classList.toggle('text-white', isPointerLocked);
+        btnFpsLock.classList.toggle('bg-white', !isPointerLocked);
+        btnFpsLock.classList.toggle('text-slate-700', !isPointerLocked);
+        if (isPointerLocked) showToast('FPS Mouse Look Active — Press ESC to exit');
+      });
+
+      // =========================================================================
+      // 12. HUD INTERACTIONS (Floors, Rooms, Lights, Fans, Mini-Map, Ceiling Height)
+      // =========================================================================
+      let toastTimer = null;
+      const toastEl = document.getElementById('toast-box');
+      function showToast(msg) {
+        toastEl.textContent = msg;
+        toastEl.classList.remove('opacity-0');
+        toastEl.classList.add('opacity-100');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+          toastEl.classList.remove('opacity-100');
+          toastEl.classList.add('opacity-0');
+        }, 2200);
+      }
+
+      // Floor Switcher Buttons
+      const btnFloorGF = document.getElementById('btn-floor-gf');
+      const btnFloorFF = document.getElementById('btn-floor-ff');
+
+      function updateFloorButtons() {
+        const isFF = player.currentFloor === 1;
+        btnFloorGF.className = `px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${!isFF ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`;
+        btnFloorFF.className = `px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${isFF ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`;
+      }
+
+      btnFloorGF.addEventListener('click', () => {
+        if (player.mode === 'GF') return;
+        teleportTo(ROOM_PRESETS.gf_living);
+        showToast('Switched to Ground Floor — Living Room');
+      });
+
+      btnFloorFF.addEventListener('click', () => {
+        if (player.mode === 'FF') return;
+        teleportTo(ROOM_PRESETS.ff_family);
+        showToast('Switched to First Floor — Family Seating');
+      });
+
+      // Jump to Room Dropdown
+      const roomSelect = document.getElementById('room-jump-select');
+      roomSelect.addEventListener('change', (e) => {
+        const key = e.target.value;
+        if (ROOM_PRESETS[key]) {
+          teleportTo(ROOM_PRESETS[key]);
+          showToast(`Jumped to ${ROOM_PRESETS[key].label}`);
+        }
+        roomSelect.selectedIndex = 0;
+        roomSelect.blur();
+      });
+
+      // Lights Toggle
+      const btnLights = document.getElementById('btn-toggle-lights');
+      btnLights.addEventListener('click', () => {
+        lightsOn = !lightsOn;
+        for (const pt of interiorLights) {
+          pt.intensity = lightsOn ? pt.userData.baseIntensity : 0;
+        }
+        for (const lm of lampMeshes) {
+          lm.material = lightsOn ? MAT.lampDiffuserOn : MAT.lampDiffuserOff;
+        }
+        for (const cm of coveMeshes) {
+          cm.material = lightsOn ? MAT.coveGlowOn : MAT.coveGlowOff;
+        }
+        hemiLight.intensity = lightsOn ? 0.78 : 0.62;
+
+        btnLights.className = lightsOn
+          ? 'px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all bg-amber-100 text-amber-900 border border-amber-300/80 hover:bg-amber-200'
+          : 'px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all bg-white text-slate-600 border border-slate-200 hover:bg-slate-100';
+        showToast(`Interior Square Ceiling Lamps: ${lightsOn ? 'ON' : 'OFF'}`);
+      });
+
+      // Fans Toggle
+      const btnFans = document.getElementById('btn-toggle-fans');
+      btnFans.addEventListener('click', () => {
+        fansOn = !fansOn;
+        btnFans.className = fansOn
+          ? 'px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all bg-sky-100 text-sky-900 border border-sky-300/80 hover:bg-sky-200'
+          : 'px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all bg-white text-slate-600 border border-slate-200 hover:bg-slate-100';
+        showToast(`Ceiling Fans: ${fansOn ? 'ON' : 'OFF'}`);
+      });
+
+      // Mini-Map Collapse / Expand
+      const mapBody = document.getElementById('minimap-body');
+      const mapIcon = document.getElementById('map-toggle-icon');
+      function toggleMinimap() {
+        mapCollapsed = !mapCollapsed;
+        mapBody.style.display = mapCollapsed ? 'none' : 'flex';
+        mapIcon.style.transform = mapCollapsed ? 'rotate(180deg)' : 'rotate(0deg)';
+      }
+      document.getElementById('btn-toggle-map').addEventListener('click', toggleMinimap);
+
+      // =========================================================================
+      // 13. DYNAMIC CEILING HEIGHT CONTROL (BOTTOM-RIGHT BUTTON & POPOVER)
+      // =========================================================================
+      const ceilingPanel = document.getElementById('ceiling-panel');
+      const btnCeilingToggle = document.getElementById('btn-ceiling-toggle');
+      const btnCloseCeiling = document.getElementById('btn-close-ceiling');
+      const ceilingChevron = document.getElementById('ceiling-chevron');
+      const btnCeilingValue = document.getElementById('btn-ceiling-value');
+      const readoutMain = document.getElementById('ceiling-readout-main');
+      const readoutSub = document.getElementById('ceiling-readout-sub');
+      const ceilingSlider = document.getElementById('ceiling-slider');
+      const presetBtns = document.querySelectorAll('.preset-btn');
+
+      let ceilingPanelOpen = false;
+      function setCeilingPanelOpen(open) {
+        ceilingPanelOpen = open;
+        ceilingPanel.classList.toggle('hidden', !open);
+        ceilingChevron.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+      }
+
+      btnCeilingToggle.addEventListener('click', () => setCeilingPanelOpen(!ceilingPanelOpen));
+      btnCloseCeiling.addEventListener('click', () => setCeilingPanelOpen(false));
+
+      function applyCeilingHeight(newH) {
+        const clamped = Math.max(8.5, Math.min(14.0, Math.round(newH * 4) / 4));
+        ceilingHeight = clamped;
+
+        // Rebuild complete 3D house geometry dynamically
+        rebuildHouse();
+
+        // Keep player grounded seamlessly whether on GF, FF, or Stairs
+        if (player.mode === 'FF') {
+          player.floorY = getFFY();
+        } else if (player.mode === 'STAIRS') {
+          player.floorY = getStairElevation(player.x, player.z);
+        } else {
+          player.floorY = getGFY();
+        }
+        syncCameraToPlayer();
+
+        // Update HUD readouts & active preset highlight
+        const formatted = formatFeetInches(ceilingHeight);
+        const meters = (ceilingHeight * FT).toFixed(2);
+        const ffLevel = formatFeetInches(getFFY());
+
+        btnCeilingValue.textContent = formatted;
+        readoutMain.textContent = formatted;
+        readoutSub.textContent = `${meters} m · FF Level: ${ffLevel}`;
+        ceilingSlider.value = ceilingHeight;
+
+        presetBtns.forEach((b) => {
+          const val = parseFloat(b.dataset.preset);
+          const active = Math.abs(val - ceilingHeight) < 0.01;
+          b.className = active
+            ? 'preset-btn py-1.5 rounded-lg text-xs font-semibold border border-slate-900 bg-slate-900 text-white transition-colors'
+            : 'preset-btn py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors';
+        });
+      }
+
+      document.getElementById('btn-height-minus').addEventListener('click', () => applyCeilingHeight(ceilingHeight - 0.25));
+      document.getElementById('btn-height-plus').addEventListener('click', () => applyCeilingHeight(ceilingHeight + 0.25));
+      ceilingSlider.addEventListener('input', (e) => applyCeilingHeight(parseFloat(e.target.value)));
+      presetBtns.forEach((b) => {
+        b.addEventListener('click', () => applyCeilingHeight(parseFloat(b.dataset.preset)));
+      });
+
+      // =========================================================================
+      // 14. RESIZE HANDLER & MAIN ANIMATION LOOP
+      // =========================================================================
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      let lastTime = performance.now();
+      let fanSpeed = 0;
+
+      function animate(now) {
+        requestAnimationFrame(animate);
+
+        const dt = Math.min(0.05, (now - lastTime) / 1000);
+        lastTime = now;
+
+        // Keyboard Turning (Q / E)
+        const turnSpeed = 1.65;
+        if (keys['KeyQ']) player.yaw += turnSpeed * dt;
+        if (keys['KeyE']) player.yaw -= turnSpeed * dt;
+
+        // Movement Input Vector
+        let moveForward = 0;
+        let moveRight = 0;
+        if (keys['KeyW'] || keys['ArrowUp'] || touchDirs.forward) moveForward += 1;
+        if (keys['KeyS'] || keys['ArrowDown'] || touchDirs.backward) moveForward -= 1;
+        if (keys['KeyD'] || keys['ArrowRight'] || touchDirs.right) moveRight += 1;
+        if (keys['KeyA'] || keys['ArrowLeft'] || touchDirs.left) moveRight -= 1;
+
+        if (moveForward !== 0 || moveRight !== 0) {
+          const len = Math.hypot(moveForward, moveRight);
+          moveForward /= len;
+          moveRight /= len;
+
+          const walkSpeed = (keys['ShiftLeft'] || keys['ShiftRight']) ? 9.0 : 5.0; // ft/s
+          const sinY = Math.sin(player.yaw);
+          const cosY = Math.cos(player.yaw);
+
+          // Forward vector in Three.js camera space is (-sinY, -cosY); Right vector is (cosY, -sinY)
+          const dx = (-sinY * moveForward + cosY * moveRight) * walkSpeed * dt;
+          const dz = (-cosY * moveForward - sinY * moveRight) * walkSpeed * dt;
+
+          movePlayer(dx, dz);
+        }
+
+        // Smooth ceiling fan acceleration / deceleration
+        const targetFanSpeed = fansOn ? 5.8 : 0.0;
+        fanSpeed += (targetFanSpeed - fanSpeed) * Math.min(1, dt * 3.5);
+        if (fanSpeed > 0.005) {
+          for (const rotor of fanRotors) {
+            rotor.rotation.y -= fanSpeed * dt;
+          }
+        }
+
+        syncCameraToPlayer();
+        updateRoomHUD();
+        if (!mapCollapsed) drawMinimap();
+
+        renderer.render(scene, camera);
+      }
+
+      // Initialize House & Start Walkthrough on Window Load
+      window.onload = function () {
+        rebuildHouse();
+        syncCameraToPlayer();
+        updateFloorButtons();
+        updateRoomHUD();
+        drawMinimap();
+        lastTime = performance.now();
+        requestAnimationFrame(animate);
+      };
+    })();
+  </script>
+</body>
+</html>
